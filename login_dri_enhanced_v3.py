@@ -19,6 +19,8 @@ from dotenv import load_dotenv
 from langchain_community.chat_models import ChatSnowflakeCortex
 from langchain_snowflake.agents import SnowflakeCortexAgent
 from langchain.schema import HumanMessage, SystemMessage
+from langgraph.graph import StateGraph, END
+from typing import TypedDict, Annotated, List, Dict, Any, Optional
 
 load_dotenv()
 
@@ -461,6 +463,16 @@ def get_snowpark_session():
         st.stop()
 
 
+# ==================== LANGGRAPH STATE ====================
+class MealPlanState(TypedDict):
+    user_profile: Dict
+    inventory_df: pd.DataFrame
+    prompt: str
+    meal_plan_json: Optional[Dict]
+    suggestions_json: Optional[List]
+    error: Optional[str]
+
+
 # ==================== MEAL PLAN AGENT WITH JSON EXTRACTION ====================
 class MealPlanAgentWithExtraction:
     """Enhanced agent that uses ChatSnowflakeCortex to extract clean JSON from agent responses"""
@@ -703,6 +715,77 @@ class MealPlanAgentWithExtraction:
         except Exception as e:
             st.error(f"Error generating suggestions: {e}")
             return []
+
+    # ==================== LANGGRAPH NODES ====================
+    def node_generate_plan(self, state: MealPlanState) -> MealPlanState:
+        """Node 1: Generate the core meal plan"""
+        print("--- Node: Generate Meal Plan ---")
+        try:
+            prompt = state['prompt']
+            user_profile = state['user_profile']
+            
+            if self.agent:
+                response = self.agent.invoke({"input": prompt})
+                raw_response = self.process_agent_response(response)
+                meal_plan_data = self.extract_json_from_response(raw_response)
+                
+                if meal_plan_data and self.validate_meal_plan_structure(meal_plan_data):
+                    meal_plan_data = self.fix_day_names_in_plan(meal_plan_data)
+                    state['meal_plan_json'] = meal_plan_data
+                else:
+                    state['error'] = "Failed to parse meal plan JSON"
+            else:
+                # Fallback to mock
+                state['meal_plan_json'] = self.generate_mock_meal_plan(user_profile)
+                
+        except Exception as e:
+            state['error'] = str(e)
+            state['meal_plan_json'] = self.generate_mock_meal_plan(state['user_profile'])
+            
+        return state
+
+    def node_generate_suggestions(self, state: MealPlanState) -> MealPlanState:
+        """Node 2: Generate suggestions based on the plan"""
+        print("--- Node: Generate Suggestions ---")
+        
+        # If plan generation failed or we are using mock, we might skip or use mock suggestions
+        if state.get('error') or not state.get('meal_plan_json'):
+            # If mock plan was generated in previous step, we can still generate suggestions or mock them
+            pass
+
+        try:
+            user_profile = state['user_profile']
+            meal_plan = state['meal_plan_json']
+            
+            # Create a summary of the generated plan
+            week_summary = meal_plan.get('meal_plan', {}).get('week_summary', {})
+            utilization = week_summary.get('inventory_utilization_rate', 0)
+            plan_summary = f"Current Plan Inventory Utilization: {utilization}%. The plan covers 7 days."
+            
+            # Reuse the standalone logic
+            suggestions = self.generate_standalone_suggestions(user_profile, plan_summary)
+            state['suggestions_json'] = suggestions
+            
+        except Exception as e:
+            print(f"Error in suggestion node: {e}")
+            state['suggestions_json'] = []
+            
+        return state
+
+    def build_graph(self):
+        """Build the LangGraph workflow"""
+        workflow = StateGraph(MealPlanState)
+        
+        # Add nodes
+        workflow.add_node("generate_plan", self.node_generate_plan)
+        workflow.add_node("generate_suggestions", self.node_generate_suggestions)
+        
+        # Add edges
+        workflow.set_entry_point("generate_plan")
+        workflow.add_edge("generate_plan", "generate_suggestions")
+        workflow.add_edge("generate_suggestions", END)
+        
+        return workflow.compile()
 
     def generate_mock_meal_plan(self, user_profile: Dict) -> Dict[str, Any]:
         """Generate a realistic mock meal plan"""
@@ -1134,14 +1217,6 @@ Generate plans based ONLY on available inventory where possible.
 If a critical item (like protein source) is missing from inventory, explicitly mention it as a REQUIRED PURCHASE.
 Do NOT estimate costs.
 Strictly follow dietary restrictions and allergies.
-
-ALSO GENERATE:
-"future_suggestions": A list of 5-10 items to buy for NEXT week to improve variety.
-- Ensure these items are NOT currently in inventory.
-- Strictly respect allergies/restrictions.
-- EXPLICITLY link each suggestion to the user's health goal ({user_profile['health_goal']}) and activity level ({user_profile['activity_level']}).
-  Example: "Since your goal is Muscle Gain, buy Greek Yogurt for high protein."
-- Format: [{{"item": "Name", "reason": "Why (linking to goal)", "category": "Category", "suggested_quantity": 0, "unit": "unit"}}]
 
 Return the meal plan in valid JSON format."""
 
@@ -1796,12 +1871,32 @@ def generate_new_meal_plan(conn, user_id):
             # Generate prompt
             prompt = generate_comprehensive_meal_plan_prompt(user_profile, inventory_df)
 
-            # Call agent
+            # Call agent with LangGraph
             session = get_snowpark_session()
             agent = MealPlanAgentWithExtraction(session)
-            meal_plan_data = agent.generate_meal_plan(prompt, user_profile)
+            
+            # Initialize state
+            initial_state = MealPlanState(
+                user_profile=user_profile,
+                inventory_df=inventory_df,
+                prompt=prompt,
+                meal_plan_json=None,
+                suggestions_json=None,
+                error=None
+            )
+            
+            # Build and invoke graph
+            workflow = agent.build_graph()
+            final_state = workflow.invoke(initial_state)
+            
+            meal_plan_data = final_state.get('meal_plan_json')
+            suggestions = final_state.get('suggestions_json')
 
             if meal_plan_data:
+                # Merge suggestions into the plan data structure
+                if suggestions:
+                    meal_plan_data['future_suggestions'] = suggestions
+
                 # Create schedule
                 schedule_id = str(uuid.uuid4())
                 tomorrow = datetime.now().date() + timedelta(days=1)
