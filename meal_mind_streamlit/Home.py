@@ -12,6 +12,7 @@ from views.shopping_list import render_shopping_list
 from views.suggestions import render_suggestions
 from views.inventory import render_inventory
 from views.profile import render_profile
+from views.chat import render_chat
 
 load_dotenv()
 
@@ -116,12 +117,13 @@ def main():
                 st.rerun()
 
             # Create tabs
-            tab_dashboard, tab_meal_plan, tab_shopping, tab_suggestions, tab_inventory, tab_profile = st.tabs([
+            tab_dashboard, tab_meal_plan, tab_shopping, tab_suggestions, tab_inventory, tab_chat, tab_profile = st.tabs([
                 "📊 Dashboard", 
                 "🍽️ Meal Plan", 
                 "🛒 Shopping List", 
                 "💡 Suggestions", 
                 "🏪 Inventory", 
+                "💬 Chat",
                 "⚙️ Profile"
             ])
 
@@ -139,6 +141,9 @@ def main():
                 
             with tab_inventory:
                 render_inventory(conn, st.session_state.user_id)
+
+            with tab_chat:
+                render_chat(conn, st.session_state.user_id)
                 
             with tab_profile:
                 render_profile(conn, st.session_state.user_id)
