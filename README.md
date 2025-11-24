@@ -16,7 +16,7 @@ Meal Mind is a comprehensive Streamlit application designed to be your personali
 
 *   **Frontend**: [Streamlit](https://streamlit.io/) - For a responsive and interactive web interface.
 *   **Backend Logic**: Python
-*   **Database**: SQLite (via `utils/db.py`) - For storing user data, meal plans, and inventory.
+*   **Database**: Snowflake (via `utils/db.py`) - For storing user data, meal plans, and inventory.
 *   **API**: [RapidAPI Nutrition Calculator](https://rapidapi.com/blog/directory/nutrition-calculator/) - For fetching accurate DRI (Dietary Reference Intake) values.
 *   **Authentication**: Custom secure authentication flow.
 
@@ -69,10 +69,18 @@ meal_mind_streamlit/
     ```
 
 4.  **Set up Environment Variables**:
-    Create a `.env` file in the `meal_mind_streamlit` directory and add your RapidAPI credentials:
+    Create a `.env` file in the `meal_mind_streamlit` directory and add your RapidAPI & Snowflake credentials:
     ```env
     RAPIDAPI_KEY=your_rapidapi_key_here
     RAPIDAPI_HOST=nutrition-calculator.p.rapidapi.com
+    SNOWFLAKE_USER= your_data
+    SNOWFLAKE_USERNAME= your_data
+    SNOWFLAKE_ACCOUNT= your_data
+    SNOWFLAKE_PASSWORD= your_data
+    SNOWFLAKE_WAREHOUSE= your_data
+    SNOWFLAKE_DATABASE= your_data
+    SNOWFLAKE_SCHEMA= your_data
+    SNOWFLAKE_ROLE= your_data
     ```
 
 ### Running the App
