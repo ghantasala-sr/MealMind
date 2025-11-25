@@ -1,0 +1,21 @@
+
+version: 2
+
+models:
+    - name: MEAL_MIND
+      description: "A starter dbt model"
+      columns:
+          - name: id
+            description: "The primary key for this table"
+            tests:
+                - unique
+                - not_null
+
+    - name: MEAL_MIND_STAGE
+      description: "A starter dbt model"
+      columns:
+          - name: id
+            description: "The primary key for this table"
+            tests:
+                - unique
+                - not_null
