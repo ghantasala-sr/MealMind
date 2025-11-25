@@ -24,7 +24,7 @@ class ChatAgent:
             self.chat_model = ChatSnowflakeCortex(
                 session=self.session,
                 model="llama3.1-70b", # Using a capable model for chat
-                cortex_search_service="MEAL_MIND_SEARCH_SERVICE" # Optional: if we have a search service
+                cortex_search_service="MEAL_MIND"
             )
         except Exception as e:
             st.warning(f"Chat Agent initialization failed: {e}")

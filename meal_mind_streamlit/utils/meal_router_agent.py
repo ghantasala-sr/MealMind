@@ -15,7 +15,7 @@ class ChatRouterState(TypedDict):
     inventory_summary: str
     meal_plan_summary: str
     history: List[Any]
-    route: Optional[Literal["meal_retrieval", "general_chat"]]
+    route: Optional[Literal["meal_retrieval", "general_chat", "calorie_estimation"]]
     retrieved_data: Optional[str]
     user_preferences: Optional[Dict]  # Long-term memory
     extracted_feedback: Optional[List[Dict]]  # New feedback from this message
@@ -32,7 +32,8 @@ class MealRouterAgent:
             # Initialize Cortex Chat Model for routing and responses
             self.chat_model = ChatSnowflakeCortex(
                 session=self.session,
-                model="llama3.1-70b"
+                model="llama3.1-70b",
+                cortex_search_service="MEAL_MIND"
             )
         except Exception as e:
             st.warning(f"Chat Model initialization failed: {e}")
@@ -73,8 +74,17 @@ class MealRouterAgent:
             'ingredient', 'what can i make', 'show me', 'get me'
         ]
         
-        # Check if query is about meals
-        if any(keyword in user_input for keyword in meal_keywords):
+        # Keywords for calorie estimation
+        estimation_keywords = [
+            'estimate', 'calculate', 'buffet', 'restaurant', 'ate', 'eating',
+            'how many calories in', 'nutritional info for'
+        ]
+        
+        # Check for estimation intent first (specific overrides)
+        if any(keyword in user_input for keyword in estimation_keywords) and not ('my plan' in user_input or 'my meal' in user_input):
+            state['route'] = 'calorie_estimation'
+        # Then check for retrieval
+        elif any(keyword in user_input for keyword in meal_keywords):
             state['route'] = 'meal_retrieval'
         else:
             state['route'] = 'general_chat'
@@ -201,6 +211,42 @@ YOUR ROLE:
             state['response'] = f"I encountered an error: {str(e)}"
         
         return state
+
+    # ==================== CALORIE ESTIMATION NODE ====================
+    def node_estimate_calories(self, state: ChatRouterState) -> ChatRouterState:
+        """Estimate calories for unstructured food descriptions"""
+        user_input = state['user_input']
+        
+        system_prompt = """You are an expert nutritionist and calorie estimator. 
+The user will describe a meal (e.g., from a buffet, restaurant, or home cooking).
+
+Your task is to:
+1. Analyze the food items described.
+2. Estimate portion sizes if not specified (make reasonable assumptions based on standard servings).
+3. Calculate the approximate Calories and Macronutrients (Protein, Carbs, Fat) for each item and the total.
+4. Provide a clear breakdown.
+5. Offer a brief, non-judgmental health tip regarding this meal.
+
+Format the output using Markdown:
+- Use bold for totals.
+- Use a list for the breakdown.
+"""
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_input)
+        ]
+        
+        try:
+            if self.chat_model:
+                response = self.chat_model.invoke(messages)
+                state['response'] = response.content
+            else:
+                state['response'] = "I'm offline and cannot estimate calories right now."
+        except Exception as e:
+            state['response'] = f"Error estimating calories: {str(e)}"
+            
+        return state
     
     # ==================== RESPONSE GENERATION NODE ====================
     def node_generate_response(self, state: ChatRouterState) -> ChatRouterState:
@@ -247,6 +293,8 @@ Generate a helpful, conversational response that:
         """Determine next node based on route"""
         if state['route'] == 'meal_retrieval':
             return 'retrieve_meals'
+        elif state['route'] == 'calorie_estimation':
+            return 'estimate_calories'
         else:
             return 'general_chat'
     
@@ -267,6 +315,7 @@ Generate a helpful, conversational response that:
         workflow.add_node("extract_feedback", self.node_extract_feedback)
         workflow.add_node("route_query", self.node_route_query)
         workflow.add_node("retrieve_meals", self.node_retrieve_meals)
+        workflow.add_node("estimate_calories", self.node_estimate_calories)
         workflow.add_node("general_chat", self.node_general_chat)
         workflow.add_node("generate_response", self.node_generate_response)
         
@@ -281,6 +330,7 @@ Generate a helpful, conversational response that:
             self.should_retrieve_meals,
             {
                 "retrieve_meals": "retrieve_meals",
+                "estimate_calories": "estimate_calories",
                 "general_chat": "general_chat"
             }
         )
@@ -291,6 +341,7 @@ Generate a helpful, conversational response that:
         # After generate_response or general_chat, end
         workflow.add_edge("generate_response", END)
         workflow.add_edge("general_chat", END)
+        workflow.add_edge("estimate_calories", END)
         
         return workflow.compile()
     

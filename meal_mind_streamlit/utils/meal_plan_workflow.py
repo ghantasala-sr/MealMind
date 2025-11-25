@@ -1,0 +1,404 @@
+"""
+LangGraph Multi-Agent Meal Plan Generator for Airflow
+Handles automated weekly meal plan generation with intelligent retry logic
+"""
+import sys
+import os
+from typing import TypedDict, Dict, List, Optional, Any
+from datetime import datetime, timedelta
+from langgraph.graph import StateGraph, END
+import json
+
+# Add meal_mind_streamlit to path
+sys.path.insert(0, '/Users/srinivasarithikghantasala/Documents/Masters/Fall_2025/Data Engineering/User_Interaction/meal_mind_streamlit')
+
+from utils.db import get_snowflake_connection, get_snowpark_session
+from utils.agent import MealPlanAgentWithExtraction
+from utils.feedback_agent import FeedbackAgent
+
+
+# ==================== STATE DEFINITION ====================
+class MealPlanGenerationState(TypedDict):
+    """State tracking for meal plan generation workflow"""
+    current_date: str
+    users_to_process: List[Dict]
+    current_user_index: int
+    current_user: Optional[Dict]
+    user_data: Optional[Dict]  # Profile, feedback, preferences
+    generated_plan: Optional[Dict]
+    success_count: int
+    failure_count: int
+    errors: List[Dict]
+    retry_count: int
+
+
+# ==================== MULTI-AGENT WORKFLOW ====================
+class MealPlanWorkflow:
+    """LangGraph-based multi-agent workflow for meal plan generation"""
+    
+    def __init__(self):
+        self.conn = get_snowflake_connection()
+        self.session = get_snowpark_session()
+        self.max_retries = 3
+    
+    # ==================== AGENT 1: USER FETCHER ====================
+    def agent_fetch_users(self, state: MealPlanGenerationState) -> MealPlanGenerationState:
+        """Fetch all users needing meal plans today"""
+        print(f"[AGENT 1] Fetching users needing plans for {state['current_date']}")
+        
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT user_id, username, next_plan_date
+                FROM planning_schedule
+                WHERE next_plan_date = %s
+                AND status = 'ACTIVE'
+                ORDER BY user_id
+            """, (state['current_date'],))
+            
+            users = []
+            for row in cursor.fetchall():
+                users.append({
+                    'user_id': row[0],
+                    'username': row[1],
+                    'next_plan_date': row[2]
+                })
+            
+            state['users_to_process'] = users
+            state['current_user_index'] = 0
+            
+            print(f"[AGENT 1] Found {len(users)} users to process")
+            return state
+            
+        except Exception as e:
+            print(f"[AGENT 1] Error fetching users: {e}")
+            state['errors'].append({
+                'agent': 'fetch_users',
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            })
+            return state
+        finally:
+            cursor.close()
+    
+    # ==================== AGENT 2: DATA AGGREGATOR ====================
+    def agent_aggregate_user_data(self, state: MealPlanGenerationState) -> MealPlanGenerationState:
+        """Gather all user data: profile, preferences, feedback, inventory"""
+        if not state['users_to_process'] or state['current_user_index'] >= len(state['users_to_process']):
+            return state
+        
+        user = state['users_to_process'][state['current_user_index']]
+        user_id = user['user_id']
+        
+        print(f"[AGENT 2] Aggregating data for user {user_id}")
+        
+        cursor = self.conn.cursor()
+        try:
+            # Get user profile
+            cursor.execute("""
+                SELECT username, age, gender, height_cm, weight_kg, 
+                       health_goal, dietary_restrictions, food_allergies,
+                       daily_calories, daily_protein, daily_carbohydrate, daily_fat,
+                       preferred_cuisines
+                FROM users
+                WHERE user_id = %s
+            """, (user_id,))
+            
+            profile_row = cursor.fetchone()
+            if not profile_row:
+                raise Exception(f"User {user_id} not found")
+            
+            profile = {
+                'username': profile_row[0],
+                'age': profile_row[1],
+                'gender': profile_row[2],
+                'height_cm': profile_row[3],
+                'weight_kg': profile_row[4],
+                'health_goal': profile_row[5],
+                'dietary_restrictions': profile_row[6],
+                'food_allergies': profile_row[7],
+                'daily_calories': profile_row[8],
+                'daily_protein': profile_row[9],
+                'daily_carbohydrate': profile_row[10],
+                'daily_fat': profile_row[11],
+                'preferred_cuisines': profile_row[12]
+            }
+            
+            # Get inventory
+            cursor.execute("""
+                SELECT ingredient, quantity, unit, category
+                FROM user_inventory
+                WHERE user_id = %s AND quantity > 0
+            """, (user_id,))
+            
+            inventory_by_category = {}
+            for row in cursor.fetchall():
+                category = row[3] or 'Other'
+                if category not in inventory_by_category:
+                    inventory_by_category[category] = []
+                inventory_by_category[category].append({
+                    'item': row[0],
+                    'quantity': row[1],
+                    'unit': row[2]
+                })
+            
+            # Get previous week's meals for variety
+            cursor.execute("""
+                SELECT md.meal_type, md.meal_name
+                FROM meal_details md
+                JOIN daily_meals dm ON md.meal_id = dm.meal_id
+                JOIN meal_plans mp ON dm.plan_id = mp.plan_id
+                WHERE mp.user_id = %s
+                AND mp.status = 'ACTIVE'
+                ORDER BY mp.created_at DESC
+                LIMIT 28
+            """, (user_id,))
+            
+            previous_meals = []
+            for row in cursor.fetchall():
+                previous_meals.append(f"{row[0].title()}: {row[1]}")
+            
+            # Get user preferences (learned from feedback)
+            feedback_agent = FeedbackAgent(self.conn, self.session)
+            preferences = feedback_agent.get_user_preferences(user_id)
+            
+            # Format preferences for prompt
+            likes = [p['name'] for p in preferences.get('likes', [])[:5]]
+            dislikes = [p['name'] for p in preferences.get('dislikes', [])[:5]]
+            cuisines = [p['name'] for p in preferences.get('cuisines', [])[:3]]
+            
+            # Compile all data
+            state['current_user'] = user
+            state['user_data'] = {
+                'user_id': user_id,
+                'profile': profile,
+                'preferences': preferences,
+                'inventory': inventory_by_category,
+                'previous_meals': previous_meals
+            }
+            
+            print(f"[AGENT 2] Aggregated data for {user_id}: {len(inventory_by_category)} inventory categories, {len(preferences.get('likes', []))} likes, {len(previous_meals)} previous meals")
+            
+            # Build comprehensive prompt
+            profile = state['user_data']['profile']
+            inventory_by_category = state['user_data']['inventory']
+            previous_meals = state['user_data']['previous_meals']
+            preferences = state['user_data']['preferences']
+            
+            # Format preferences
+            likes = [p['name'] for p in preferences.get('likes', [])[:5]]
+            dislikes = [p['name'] for p in preferences.get('dislikes', [])[:5]]
+            cuisines = [p['name'] for p in preferences.get('cuisines', [])[:3]]
+            
+            prompt = f"""Generate a complete 7-day meal plan for:
+
+IMPORTANT: Today is {datetime.now().strftime('%A, %B %d, %Y')}. 
+The meal plan should start from TODAY and continue for 7 days.
+Ensure day names match the actual calendar dates (e.g., if today is Friday, day 1 should be Friday, day 2 should be Saturday, etc.).
+
+USER PROFILE:
+- User ID: {user_id}
+- Age: {profile.get('age')} years
+- Gender: {profile.get('gender')}
+- Height: {profile.get('height_cm')} cm
+- Weight: {profile.get('weight_kg')} kg
+- Activity Level: {profile.get('activity_level')}
+- Health Goal: {profile.get('health_goal')}
+- Dietary Restrictions: {profile.get('dietary_restrictions', 'None')}
+- Food Allergies: {profile.get('food_allergies', 'None')}
+- Preferred Cuisines: {profile.get('preferred_cuisines', 'Any')}
+
+DAILY NUTRITIONAL TARGETS:
+- Calories: {profile.get('daily_calories', 2000)} kcal
+- Protein: {profile.get('daily_protein', 130):.1f}g
+- Carbohydrates: {profile.get('daily_carbohydrate', 250):.1f}g
+- Fat: {profile.get('daily_fat', 70):.1f}g
+- Fiber: {profile.get('daily_fiber', 30):.1f}g
+
+LEARNED PREFERENCES (From User Feedback):
+- Likes: {', '.join(likes) if likes else 'None recorded'}
+- Dislikes (MUST AVOID): {', '.join(dislikes) if dislikes else 'None recorded'}
+- Preferred Cuisines: {', '.join(cuisines) if cuisines else profile.get('preferred_cuisines', 'Any')}
+
+PREVIOUS WEEK'S MEALS (For Variety - Do Not Repeat):
+{chr(10).join(previous_meals) if previous_meals else 'No previous meal history'}
+
+CURRENT INVENTORY:
+{json.dumps(inventory_by_category, indent=2)}
+
+INSTRUCTIONS:
+1. Create a detailed 7-day meal plan with complete recipes and inventory optimization
+2. Generate plans based ONLY on available inventory where possible
+3. If a critical item (like protein source) is missing from inventory, explicitly mention it as a REQUIRED PURCHASE
+4. Do NOT estimate costs
+5. Strictly follow dietary restrictions and allergies
+6. **CRITICAL: Respect learned preferences - incorporate likes and COMPLETELY AVOID all dislikes**
+7. **IMPORTANT: Provide variety - avoid repeating meals from the previous week's list**
+8. Prioritize recipes from preferred cuisines where possible
+9. Ensure each day meets the daily nutritional targets
+10. Provide variety throughout the week
+
+Return the meal plan in valid JSON format."""
+
+            # Generate plan
+            result = meal_agent.generate_meal_plan(
+                prompt=prompt,
+                user_profile=profile
+            )
+            
+            state['generated_plan'] = result
+            print(f"[AGENT 3] Successfully generated plan for {user_id}")
+            return state
+            
+        except Exception as e:
+            print(f"[AGENT 3] Error generating plan for {user_id}: {e}")
+            state['errors'].append({
+                'agent': 'generate_plan',
+                'user_id': user_id,
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            })
+            state['generated_plan'] = None
+            return state
+    
+    # ==================== AGENT 4: PLAN PERSISTER ====================
+    def agent_persist_plan(self, state: MealPlanGenerationState) -> MealPlanGenerationState:
+        """Save generated plan to database with retry logic"""
+        if not state['generated_plan'] or not state['user_data']:
+            state['retry_count'] += 1
+            if state['retry_count'] <= self.max_retries:
+                print(f"[AGENT 4] Retry {state['retry_count']}/{self.max_retries}")
+                return state
+            else:
+                state['failure_count'] += 1
+                state['retry_count'] = 0
+                return state
+        
+        user_id = state['user_data']['user_id']
+        plan = state['generated_plan']
+        
+        print(f"[AGENT 4] Persisting plan for {user_id}")
+        
+        cursor = self.conn.cursor()
+        try:
+            # Save meal plan (using existing helpers)
+            from utils.helpers import save_meal_plan_to_db
+            
+            save_meal_plan_to_db(
+                conn=self.conn,
+                user_id=user_id,
+                meal_plan=plan
+            )
+            
+            # Update planning_schedule
+            next_date = datetime.now().date() + timedelta(days=7)
+            cursor.execute("""
+                UPDATE planning_schedule
+                SET next_plan_date = %s,
+                    last_generated_at = CURRENT_TIMESTAMP(),
+                    generation_count = generation_count + 1
+                WHERE user_id = %s
+            """, (next_date, user_id))
+            
+            self.conn.commit()
+            
+            state['success_count'] += 1
+            state['retry_count'] = 0
+            print(f"[AGENT 4] Successfully saved plan for {user_id}")
+            
+        except Exception as e:
+            print(f"[AGENT 4] Error saving plan for {user_id}: {e}")
+            self.conn.rollback()
+            
+            state['retry_count'] += 1
+            if state['retry_count'] > self.max_retries:
+                state['failure_count'] += 1
+                state['errors'].append({
+                    'agent': 'persist_plan',
+                    'user_id': user_id,
+                    'error': str(e),
+                    'retries': self.max_retries,
+                    'timestamp': datetime.now().isoformat()
+                })
+                state['retry_count'] = 0
+        finally:
+            cursor.close()
+        
+        return state
+    
+    # ==================== ROUTING LOGIC ====================
+    def should_retry(self, state: MealPlanGenerationState) -> str:
+        """Decide if we should retry or move to next user"""
+        if state['retry_count'] > 0 and state['retry_count'] <= self.max_retries:
+            return 'retry'
+        return 'next_user'
+    
+    def has_more_users(self, state: MealPlanGenerationState) -> str:
+        """Check if there are more users to process"""
+        state['current_user_index'] += 1
+        if state['current_user_index'] < len(state['users_to_process']):
+            return 'process_next'
+        return 'complete'
+    
+    # ==================== BUILD WORKFLOW ====================
+    def build_workflow(self):
+        """Build LangGraph workflow"""
+        workflow = StateGraph(MealPlanGenerationState)
+        
+        # Add nodes
+        workflow.add_node("fetch_users", self.agent_fetch_users)
+        workflow.add_node("aggregate_data", self.agent_aggregate_user_data)
+        workflow.add_node("generate_plan", self.agent_generate_meal_plan)
+        workflow.add_node("persist_plan", self.agent_persist_plan)
+        
+        # Define edges
+        workflow.set_entry_point("fetch_users")
+        workflow.add_edge("fetch_users", "aggregate_data")
+        workflow.add_edge("aggregate_data", "generate_plan")
+        workflow.add_edge("generate_plan", "persist_plan")
+        
+        # Conditional routing from persist
+        workflow.add_conditional_edges(
+            "persist_plan",
+            self.should_retry,
+            {
+                "retry": "aggregate_data",  # Retry from data aggregation
+                "next_user": "aggregate_data"  # Process next user
+            }
+        )
+        
+        # Check if more users after persist
+        workflow.add_conditional_edges(
+            "aggregate_data",
+            self.has_more_users,
+            {
+                "process_next": "aggregate_data",
+                "complete": END
+            }
+        )
+        
+        return workflow.compile()
+    
+    # ==================== RUN METHOD ====================
+    def run(self, target_date: str = None):
+        """Execute the workflow"""
+        if not target_date:
+            target_date = datetime.now().date().isoformat()
+        
+        initial_state = MealPlanGenerationState(
+            current_date=target_date,
+            users_to_process=[],
+            current_user_index=0,
+            current_user=None,
+            user_data=None,
+            generated_plan=None,
+            success_count=0,
+            failure_count=0,
+            errors=[],
+            retry_count=0
+        )
+        
+        app = self.build_workflow()
+        final_state = app.invoke(initial_state)
+        
+        return final_state

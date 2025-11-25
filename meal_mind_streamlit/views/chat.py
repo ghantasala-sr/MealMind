@@ -53,7 +53,9 @@ def render_chat(conn, user_id):
         st.session_state.current_thread_id = thread_id
     
     # Thread Selector UI
-    threads = thread_mgr.get_user_threads(user_id, limit=3)
+    if "thread_list_cache" not in st.session_state:
+        st.session_state.thread_list_cache = thread_mgr.get_user_threads(user_id, limit=3)
+    threads = st.session_state.thread_list_cache
     
     col1, col2, col3 = st.columns([0.6, 0.3, 0.1])
     with col1:
@@ -87,6 +89,9 @@ def render_chat(conn, user_id):
     with col3:
         if st.button("➕", help="New conversation"):
             new_thread = thread_mgr.create_thread(user_id)
+            # Invalidate cache so new thread appears
+            if "thread_list_cache" in st.session_state:
+                del st.session_state.thread_list_cache
             st.session_state.current_thread_id = new_thread
             st.session_state.messages = [
                 AIMessage(content="Hello! I'm Meal Mind. How can I help you with your nutrition today?")
@@ -166,44 +171,81 @@ def render_chat(conn, user_id):
         # Add user message to state
         st.session_state.messages.append(HumanMessage(content=prompt))
         
-        # Persist user message to database
-        thread_mgr.add_message(
-            thread_id=st.session_state.current_thread_id,
-            role="user",
-            content=prompt
-        )
-        
-        # Display user message immediately
+        # Display user message immediately (Optimistic UI)
         with message_container:
             with st.chat_message("user", avatar="👤"):
                 st.markdown(prompt)
 
+        # Persist user message to database (Background Thread)
+        import threading
+        def save_message_bg(thread_id, role, content):
+            try:
+                # Create a new cursor for the background thread to avoid conflicts
+                # Note: Snowflake connection is thread-safe if we use separate cursors
+                thread_mgr.add_message(thread_id, role, content)
+            except Exception as e:
+                print(f"Background save failed: {e}")
+
+        save_thread = threading.Thread(
+            target=save_message_bg,
+            args=(st.session_state.current_thread_id, "user", prompt)
+        )
+        save_thread.start()
+
         # Prepare context data
         try:
             # Fetch fresh context
-            with st.spinner("Gathering your data..."):
-                user_profile = get_user_profile(conn, user_id)
-                inventory_df = get_user_inventory(conn, user_id)
-                meal_plan_data = get_latest_meal_plan(conn, user_id)
-                
-                # Format inventory summary
-                if not inventory_df.empty:
-                    inv_summary = inventory_df.head(20).to_string()  # Limit for token efficiency
-                else:
-                    inv_summary = "Inventory is empty."
-                
-                # Format meal plan summary
-                if meal_plan_data:
-                    mp_summary = str(meal_plan_data.get('meal_plan', {}).get('week_summary', ''))
-                    meal_plan_summary = f"Week Summary: {mp_summary}"
-                else:
-                    meal_plan_summary = "No active meal plan."
+            # Fetch fresh context with caching and status updates
+            context_data = {}
+            
+            # Check if we have cached context
+            if "chat_context_cache" in st.session_state:
+                context_data = st.session_state.chat_context_cache
+            
+            # If cache is missing or empty, fetch data
+            if not context_data:
+                with st.status("Thinking...", expanded=True) as status:
+                    status.write("Analyzing your request...")
+                    
+                    # Fetch Profile
+                    status.write("Checking your profile...")
+                    user_profile = get_user_profile(conn, user_id)
+                    
+                    # Fetch Inventory
+                    status.write("Scanning inventory...")
+                    inventory_df = get_user_inventory(conn, user_id)
+                    
+                    # Fetch Meal Plan
+                    status.write("Reviewing meal plan...")
+                    meal_plan_data = get_latest_meal_plan(conn, user_id)
+                    
+                    # Format inventory summary
+                    if not inventory_df.empty:
+                        inv_summary = inventory_df.head(20).to_string()  # Limit for token efficiency
+                    else:
+                        inv_summary = "Inventory is empty."
+                    
+                    # Format meal plan summary
+                    if meal_plan_data:
+                        mp_summary = str(meal_plan_data.get('meal_plan', {}).get('week_summary', ''))
+                        meal_plan_summary = f"Week Summary: {mp_summary}"
+                    else:
+                        meal_plan_summary = "No active meal plan."
 
-                context_data = {
-                    "user_profile": user_profile,
-                    "inventory_summary": inv_summary,
-                    "meal_plan_summary": meal_plan_summary
-                }
+                    context_data = {
+                        "user_profile": user_profile,
+                        "inventory_summary": inv_summary,
+                        "meal_plan_summary": meal_plan_summary
+                    }
+                    
+                    # Cache the data
+                    st.session_state.chat_context_cache = context_data
+                    
+                    status.update(label="Generating response...", state="running", expanded=False)
+            else:
+                 # If using cache, just show a quick status
+                 with st.status("Generating response...", expanded=False, state="running") as status:
+                     time.sleep(0.1) # Tiny pause for UI smoothness
 
             # Get streaming response from agent
             with message_container:

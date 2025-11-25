@@ -466,6 +466,85 @@ def get_meal_details_by_type(conn, user_id, meal_type):
     return get_meals_by_criteria(conn, user_id, day_number=None, meal_type=meal_type)
 
 
+def get_meals_by_date(conn, user_id, meal_date=None, meal_type=None):
+    """
+    Get meals by specific date (for historical queries like 'What did I eat last Monday?')
+    
+    Args:
+        conn: Database connection
+        user_id: User ID
+        meal_date: Specific date (YYYY-MM-DD) or None for most recent
+        meal_type: breakfast, lunch, dinner, snacks, or None for all
+    
+    Returns:
+        List of meal dictionaries with full details
+    """
+    import json
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT 
+                md.meal_type,
+                md.meal_name,
+                md.ingredients_with_quantities,
+                md.recipe,
+                md.nutrition,
+                md.preparation_time,
+                md.cooking_time,
+                md.servings,
+                md.difficulty_level,
+                dm.meal_date,
+                dm.day_name
+            FROM meal_details md
+            JOIN daily_meals dm ON md.meal_id = dm.meal_id
+            JOIN meal_plans mp ON dm.plan_id = mp.plan_id
+            WHERE mp.user_id = %s
+        """
+        
+        params = [user_id]
+        
+        if meal_date:
+            query += " AND dm.meal_date = %s"
+            params.append(meal_date)
+        else:
+            # Get most recent meals
+            query += " AND mp.status = 'ACTIVE'"
+        
+        if meal_type:
+            query += " AND md.meal_type = %s"
+            params.append(meal_type.lower())
+        
+        query += " ORDER BY dm.meal_date DESC, md.meal_type"
+        
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        
+        meals = []
+        for row in rows:
+            meal = {
+                'meal_type': row[0],
+                'meal_name': row[1],
+                'ingredients': json.loads(row[2]) if row[2] else [],
+                'recipe': json.loads(row[3]) if row[3] else {},
+                'nutrition': json.loads(row[4]) if row[4] else {},
+                'preparation_time': row[5],
+                'cooking_time': row[6],
+                'servings': row[7],
+                'difficulty_level': row[8],
+                'meal_date': row[9],
+                'day_name': row[10]
+            }
+            meals.append(meal)
+        
+        return meals
+    
+    except Exception as e:
+        st.error(f"Error fetching meals by date: {e}")
+        return []
+    finally:
+        cursor.close()
+
+
 def search_meals_by_ingredient(conn, user_id, ingredient_name):
     """Search for meals containing a specific ingredient"""
     import json
