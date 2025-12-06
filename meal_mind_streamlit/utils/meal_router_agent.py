@@ -20,6 +20,7 @@ class ChatRouterState(TypedDict):
     user_preferences: Optional[Dict]  # Long-term memory
     extracted_feedback: Optional[List[Dict]]  # New feedback from this message
     response: str
+    final_messages: Optional[List[Any]] # Messages prepared for the LLM
     adjustment_result: Optional[Dict] # Result from adjustment agent
     monitoring_warnings: Optional[List[str]] # Warnings from monitoring agent
 
@@ -35,28 +36,34 @@ class MealRouterAgent:
             self.chat_model = ChatSnowflakeCortex(
                 session=self.session,
                 model="llama3.1-70b",
-                cortex_search_service="MEAL_MIND"
+                cortex_search_service="MEAL_MIND",
+                streaming=True
             )
         except Exception as e:
             st.warning(f"Chat Model initialization failed: {e}")
             self.chat_model = None
         
-        # Initialize Agents
+        # Initialize Agents (Eager Load)
         from utils.feedback_agent import FeedbackAgent
         from utils.meal_adjustment_agent import MealAdjustmentAgent
         from utils.monitoring_agent import MonitoringAgent
         
-        self.feedback_agent = FeedbackAgent(conn, session)
-        self.adjustment_agent = MealAdjustmentAgent(session, conn)
-        self.monitoring_agent = MonitoringAgent(conn)
+        self.feedback_agent = FeedbackAgent(self.conn, self.session)
+        self.adjustment_agent = MealAdjustmentAgent(self.session, self.conn)
+        self.monitoring_agent = MonitoringAgent(self.conn)
+    
     
     # ==================== LOAD PREFERENCES NODE ====================
     def node_load_preferences(self, state: ChatRouterState) -> ChatRouterState:
         """Load user preferences from long-term memory"""
+        # If already pre-loaded, skip DB call
+        if state.get('user_preferences'):
+            return state
+            
         preferences = self.feedback_agent.get_user_preferences(state['user_id'])
         state['user_preferences'] = preferences
         return state
-    
+
     # ==================== EXTRACT FEEDBACK NODE ====================
     def node_extract_feedback(self, state: ChatRouterState) -> ChatRouterState:
         """Extract preferences from user message"""
@@ -88,7 +95,7 @@ class MealRouterAgent:
         
         # Keywords for meal adjustment/reporting
         adjustment_keywords = [
-            'change', 'replace', 'swap', 'instead', 'don\'t want', 'ate', 'had', 'went to', 
+            'add', 'remove', 'delete', 'change', 'replace', 'swap', 'instead', 'don\'t want', 'ate', 'had', 'went to', 
             'buffet', 'restaurant', 'eaten', 'drank', 'consumed'
         ]
         
@@ -118,18 +125,24 @@ class MealRouterAgent:
         else:
             state['route'] = 'general_chat'
         
+        # DEBUG: Print routing decision
+        print(f"DEBUG: Routing query '{user_input}' -> {state['route']}")
+        
         return state
     
     # ==================== MEAL RETRIEVAL NODE ====================
     def node_retrieve_meals(self, state: ChatRouterState) -> ChatRouterState:
         """Retrieve meal information from database based on user query"""
-        from utils.db import get_meals_by_criteria, get_meal_details_by_type
+        print("DEBUG: Entering node_retrieve_meals")
+        from utils.db import get_meals_by_criteria
+        import json
+        from datetime import datetime
         
         user_input = state['user_input'].lower()
         user_id = state['user_id']
         
         try:
-            # Extract meal type from query
+            # 1. Try Rule-Based Extraction
             meal_type = None
             if 'breakfast' in user_input:
                 meal_type = 'breakfast'
@@ -140,28 +153,82 @@ class MealRouterAgent:
             elif 'snack' in user_input:
                 meal_type = 'snacks'
             
-            # Extract day from query
-            days_map = {
-                'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4,
-                'friday': 5, 'saturday': 6, 'sunday': 7,
-                'today': datetime.now().weekday() + 1
-            }
+            # Calculate dates instead of day numbers
+            from datetime import timedelta
+            today = datetime.now()
+            target_date = None
             
-            day_number = None
-            for day_name, day_num in days_map.items():
-                if day_name in user_input:
-                    day_number = day_num
-                    break
+            if 'today' in user_input:
+                target_date = today
+            elif 'tomorrow' in user_input:
+                target_date = today + timedelta(days=1)
+            else:
+                # Check for day names
+                weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+                for i, day in enumerate(weekdays):
+                    if day in user_input:
+                        # Find the next occurrence of this day (or today if it matches)
+                        current_weekday = today.weekday()
+                        days_ahead = i - current_weekday
+                        if days_ahead < 0: # Target day already passed this week, assume next week? 
+                            # Or maybe the user means "last Monday"? 
+                            # For meal planning, usually means upcoming.
+                            days_ahead += 7
+                        target_date = today + timedelta(days=days_ahead)
+                        break
             
-            # Query database
-            meals = get_meals_by_criteria(self.conn, user_id, day_number, meal_type)
+            meal_date = None
+            if target_date:
+                meal_date = target_date.strftime('%Y-%m-%d')
+            
+            # 2. If Rule-Based failed to find a specific day, try LLM Extraction for Dates
+            # We only do this if we have a chat model available
+            if meal_date is None and self.chat_model:
+                try:
+                    extraction_prompt = f"""
+                    Extract the date and meal type from the user query.
+                    Query: "{state['user_input']}"
+                    
+                    Return ONLY a JSON object with keys:
+                    - "date": YYYY-MM-DD format (or null if not found). Assume current year {datetime.now().year} if not specified.
+                    - "meal_type": breakfast, lunch, dinner, snacks (or null if not found)
+                    """
+                    
+                    response = self.chat_model.invoke([HumanMessage(content=extraction_prompt)])
+                    content = response.content.strip()
+                    # Clean up markdown code blocks if present
+                    if "```json" in content:
+                        content = content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in content:
+                        content = content.split("```")[1].split("```")[0].strip()
+                        
+                    extracted = json.loads(content)
+                    
+                    if extracted.get('date'):
+                        meal_date = extracted['date']
+                    
+                    # If we didn't find meal_type via rules, use LLM result
+                    if not meal_type and extracted.get('meal_type'):
+                        meal_type = extracted['meal_type']
+                        
+                except Exception as e:
+                    print(f"LLM Extraction failed: {e}")
+                    # Fallback to ignoring date
+            
+            # 3. Query Database
+            # Pass meal_date if we found one, otherwise get_meals_by_criteria might return all or default
+            # We explicitly set day_number to None to avoid the mismatch issue
+            meals = get_meals_by_criteria(self.conn, user_id, day_number=None, meal_type=meal_type, meal_date=meal_date)
             
             if meals:
                 # Format the retrieved data
                 formatted_data = "## Retrieved Meals\n\n"
                 for meal in meals:
                     formatted_data += f"**{meal.get('meal_name', 'Unknown')}** ({meal.get('meal_type', '').title()})\n"
-                    formatted_data += f"- Day: {meal.get('day_name', 'Unknown')}\n"
+                    if meal.get('meal_date'):
+                        formatted_data += f"- Date: {meal.get('meal_date')}\n"
+                    else:
+                        formatted_data += f"- Day: {meal.get('day_name', 'Unknown')}\n"
                     
                     nutrition = meal.get('nutrition', {})
                     if nutrition:
@@ -174,36 +241,93 @@ class MealRouterAgent:
                     
                     formatted_data += "\n"
                 
-                state['retrieved_data'] = formatted_data
+                # Update state
+                new_state = state.copy()
+                new_state['retrieved_data'] = formatted_data
+                return new_state
             else:
-                state['retrieved_data'] = "No meals found matching your criteria. You may not have an active meal plan."
+                new_state = state.copy()
+                new_state['retrieved_data'] = "No meals found matching your criteria. You may not have an active meal plan for this date."
+                return new_state
         
         except Exception as e:
-            state['retrieved_data'] = f"Error retrieving meals: {str(e)}"
-        
-        return state
+            new_state = state.copy()
+            new_state['retrieved_data'] = f"Error retrieving meals: {str(e)}"
+            return new_state
     
     # ==================== MEAL ADJUSTMENT NODE ====================
     def node_adjust_meal(self, state: ChatRouterState) -> ChatRouterState:
         """Handle meal changes and restaurant entries"""
+        import json
+        from datetime import datetime
+        
         user_input = state['user_input'].lower()
         user_id = state['user_id']
         
-        # Identify meal type and date (default to today)
+        # 1. Try Rule-Based Extraction
         meal_type = 'lunch' # Default
         if 'breakfast' in user_input: meal_type = 'breakfast'
         elif 'dinner' in user_input: meal_type = 'dinner'
         elif 'snack' in user_input: meal_type = 'snacks'
         
         date = datetime.now().strftime('%Y-%m-%d')
-        # Simple date logic for now, could be enhanced
+        
+        # 2. Try LLM Extraction for Date if keywords suggest a specific date
+        # Keywords: month names, numbers, "tomorrow", "yesterday"
+        date_indicators = [
+            'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+            'tomorrow', 'yesterday', 'next', 'last', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+        ]
+        
+        if any(indicator in user_input for indicator in date_indicators) and self.chat_model:
+            try:
+                extraction_prompt = f"""
+                Extract the date and meal type from the user query for a meal update.
+                Query: "{state['user_input']}"
+                
+                Return ONLY a JSON object with keys:
+                - "date": YYYY-MM-DD format (or null if not found). Assume current year {datetime.now().year} if not specified.
+                - "meal_type": breakfast, lunch, dinner, snacks (or null if not found)
+                """
+                
+                response = self.chat_model.invoke([HumanMessage(content=extraction_prompt)])
+                content = response.content.strip()
+                # Clean up markdown code blocks if present
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0].strip()
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0].strip()
+                    
+                extracted = json.loads(content)
+                
+                if extracted.get('date'):
+                    date = extracted['date']
+                
+                if extracted.get('meal_type'):
+                    meal_type = extracted['meal_type']
+                    
+            except Exception as e:
+                print(f"LLM Adjustment Extraction failed: {e}")
+                # Fallback to default date/type
         
         result = self.adjustment_agent.process_request(
             user_input, user_id, date, meal_type
         )
         
-        state['adjustment_result'] = result
-        return state
+        # Create a new state copy to ensure updates are detected
+        new_state = state.copy()
+        new_state['adjustment_result'] = result
+        
+        # If successful, we should also set a response message
+        if result.get('status') == 'success':
+            new_state['response'] = result.get('message')
+            new_state['final_messages'] = None # No need for further LLM generation
+        else:
+            # If failed, let the LLM explain or just show the error
+            new_state['response'] = result.get('message')
+            new_state['final_messages'] = None
+            
+        return new_state
 
     # ==================== MONITORING NODE ====================
     def node_monitor_changes(self, state: ChatRouterState) -> ChatRouterState:
@@ -219,7 +343,7 @@ class MealRouterAgent:
 
     # ==================== GENERAL CHAT NODE ====================
     def node_general_chat(self, state: ChatRouterState) -> ChatRouterState:
-        """Handle general nutrition and cooking questions"""
+        """Prepare messages for general chat"""
         user_profile = state['user_profile']
         inventory = state['inventory_summary']
         meal_plan = state['meal_plan_summary']
@@ -229,7 +353,15 @@ class MealRouterAgent:
         # Format preferences for prompt
         pref_text = self.feedback_agent.format_preferences_for_prompt(preferences)
         
+        from datetime import datetime
+        current_date_str = datetime.now().strftime('%A, %B %d, %Y')
+        
+        # DEBUG: Print date to terminal
+        print(f"DEBUG: ROUTER SYSTEM DATE IS {current_date_str}")
+        
         system_prompt = f"""You are Meal Mind AI, a helpful nutrition and meal planning assistant.
+
+TODAY'S DATE: {current_date_str}
 
 USER PROFILE:
 - Name: {user_profile.get('username', 'User')}
@@ -252,6 +384,7 @@ YOUR ROLE:
 - Be encouraging and supportive
 - Keep responses concise and helpful
 - IMPORTANT: Respect user dislikes and preferences in your suggestions
+- CRITICAL: STRICTLY respect the user's dietary restrictions and allergies. NEVER suggest foods they cannot eat.
 """
         
         # Prepare messages
@@ -278,20 +411,14 @@ YOUR ROLE:
         # Add current query
         messages.append(HumanMessage(content=state['user_input']))
         
-        try:
-            if self.chat_model:
-                response = self.chat_model.invoke(messages)
-                state['response'] = response.content
-            else:
-                state['response'] = "I'm currently in offline mode. Please check your connection."
-        except Exception as e:
-            state['response'] = f"I encountered an error: {str(e)}"
-        
-        return state
+        # Return full state copy to ensure update is detected
+        new_state = state.copy()
+        new_state['final_messages'] = messages
+        return new_state
 
     # ==================== CALORIE ESTIMATION NODE ====================
     def node_estimate_calories(self, state: ChatRouterState) -> ChatRouterState:
-        """Estimate calories for unstructured food descriptions"""
+        """Prepare messages for calorie estimation"""
         user_input = state['user_input']
         
         system_prompt = """You are an expert nutritionist and calorie estimator. 
@@ -314,20 +441,23 @@ Format the output using Markdown:
             HumanMessage(content=user_input)
         ]
         
-        try:
-            if self.chat_model:
-                response = self.chat_model.invoke(messages)
-                state['response'] = response.content
-            else:
-                state['response'] = "I'm offline and cannot estimate calories right now."
-        except Exception as e:
-            state['response'] = f"Error estimating calories: {str(e)}"
-            
-        return state
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_input)
+        ]
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_input)
+        ]
+        
+        new_state = state.copy()
+        new_state['final_messages'] = messages
+        return new_state
     
     # ==================== RESPONSE GENERATION NODE ====================
     def node_generate_response(self, state: ChatRouterState) -> ChatRouterState:
-        """Generate final response using retrieved data if available"""
+        """Prepare messages for retrieval/adjustment response"""
         
         # Case 1: Adjustment Result
         if state.get('adjustment_result'):
@@ -339,10 +469,10 @@ Format the output using Markdown:
                 response += "**New Daily Total:**\n"
                 totals = result['new_daily_total']
                 response += f"- Calories: {totals['calories']} kcal\n"
-                response += f"- Protein: {totals['protein']}g\n"
-                response += f"- Carbs: {totals['carbohydrates']}g\n"
-                response += f"- Fat: {totals['fat']}g\n"
-                response += f"- Fiber: {totals['fiber']}g\n"
+                response += f"- Protein: {totals['protein_g']}g\n"
+                response += f"- Carbs: {totals['carbohydrates_g']}g\n"
+                response += f"- Fat: {totals['fat_g']}g\n"
+                response += f"- Fiber: {totals['fiber_g']}g\n"
                 
                 if warnings:
                     response += "\n**Health Alerts:**\n"
@@ -351,25 +481,41 @@ Format the output using Markdown:
             else:
                 response = f"❌ {result['message']}"
                 
-            state['response'] = response
-            return state
+            # For adjustment, we don't need LLM, just return the static response
+            # We can signal this by setting response directly and final_messages to None
+            # For adjustment, we don't need LLM, just return the static response
+            # We can signal this by setting response directly and final_messages to None
+            # For adjustment, we don't need LLM, just return the static response
+            # We can signal this by setting response directly and final_messages to None
+            new_state = state.copy()
+            new_state['response'] = response
+            new_state['final_messages'] = None
+            return new_state
 
         # Case 2: Retrieved Meal Data
         if state.get('retrieved_data'):
             user_profile = state['user_profile']
             
+            from datetime import datetime
+            current_date_str = datetime.now().strftime('%A, %B %d, %Y')
+            
             system_prompt = f"""You are Meal Mind AI. The user asked about their meals and we retrieved this data:
+
+TODAY'S DATE: {current_date_str}
 
 {state['retrieved_data']}
 
 USER PROFILE:
 - Goal: {user_profile.get('health_goal', 'General Health')}
+- Dietary Restrictions: {user_profile.get('dietary_restrictions', 'None')}
+- Allergies: {user_profile.get('food_allergies', 'None')}
 
 Generate a helpful, conversational response that:
 1. Presents the meal information clearly
 2. Relates it to their health goals
 3. Offers any relevant tips or suggestions
 4. Keep it concise and friendly
+5. CRITICAL: STRICTLY respect the user's dietary restrictions and allergies. NEVER suggest foods they cannot eat.
 """
             
             messages = [
@@ -377,17 +523,10 @@ Generate a helpful, conversational response that:
                 HumanMessage(content=state['user_input'])
             ]
             
-            try:
-                if self.chat_model:
-                    response = self.chat_model.invoke(messages)
-                    state['response'] = response.content
-                else:
-                    # Fallback to just showing the data
-                    state['response'] = state['retrieved_data']
-            except Exception as e:
-                state['response'] = state['retrieved_data']
+            new_state = state.copy()
+            new_state['final_messages'] = messages
+            return new_state
         
-        # If response is already set from general_chat, keep it
         return state
     
     # ==================== CONDITIONAL EDGES ====================
@@ -403,8 +542,10 @@ Generate a helpful, conversational response that:
             return 'general_chat'
     
     # ==================== BUILD GRAPH ====================
-    def build_graph(self):
+    def build_graph(self, thread_id: str = None):
         """Build the LangGraph workflow with memory integration"""
+        from utils.checkpoint import SnowflakeCheckpointSaver
+        
         workflow = StateGraph(ChatRouterState)
         
         # Add nodes
@@ -419,9 +560,9 @@ Generate a helpful, conversational response that:
         workflow.add_node("generate_response", self.node_generate_response)
         
         # Add edges - Memory-aware workflow
+        # OPTIMIZATION: load_preferences -> route_query (skip extraction for speed)
         workflow.set_entry_point("load_preferences")
-        workflow.add_edge("load_preferences", "extract_feedback")
-        workflow.add_edge("extract_feedback", "route_query")
+        workflow.add_edge("load_preferences", "route_query")
         
         # Conditional routing after route_query
         workflow.add_conditional_edges(
@@ -442,15 +583,23 @@ Generate a helpful, conversational response that:
         # Meal Retrieval Flow
         workflow.add_edge("retrieve_meals", "generate_response")
         
-        # End points
-        workflow.add_edge("generate_response", END)
-        workflow.add_edge("general_chat", END)
-        workflow.add_edge("estimate_calories", END)
+        # OPTIMIZATION: Run extraction AFTER response generation (Background)
+        # All paths lead to extract_feedback before END
+        workflow.add_edge("generate_response", "extract_feedback")
+        workflow.add_edge("general_chat", "extract_feedback")
+        workflow.add_edge("estimate_calories", "extract_feedback")
         
-        return workflow.compile()
+        workflow.add_edge("extract_feedback", END)
+        
+        # Initialize Checkpointer
+        # Use MemorySaver for speed, we will handle persistence separately or optimize SnowflakeSaver later
+        from langgraph.checkpoint.memory import MemorySaver
+        checkpointer = MemorySaver()
+        
+        return workflow.compile(checkpointer=checkpointer)
     
     # ==================== RUN METHODS ====================
-    def run_chat(self, user_input: str, user_id: str, history: List[Any], context_data: Dict) -> str:
+    def run_chat(self, user_input: str, user_id: str, history: List[Any], context_data: Dict, thread_id: str = None) -> str:
         """Main entry point to run the multi-agent chat"""
         
         initial_state = ChatRouterState(
@@ -469,19 +618,112 @@ Generate a helpful, conversational response that:
             monitoring_warnings=None
         )
         
-        app = self.build_graph()
-        result = app.invoke(initial_state)
+        app = self.build_graph(thread_id)
+        
+        config = {"configurable": {"thread_id": thread_id}} if thread_id else None
+        
+        result = app.invoke(initial_state, config=config)
         
         return result['response']
     
-    def run_chat_stream(self, user_input: str, user_id: str, history: List[Any], context_data: Dict):
-        """Stream the chat response word by word"""
+    def run_chat_stream(self, user_input: str, user_id: str, history: List[Any], context_data: Dict, user_preferences: Dict = None, thread_id: str = None):
+        """Stream the chat response with status updates"""
         
-        # Get the full response first
-        full_response = self.run_chat(user_input, user_id, history, context_data)
+        initial_state = ChatRouterState(
+            user_input=user_input,
+            user_id=user_id,
+            user_profile=context_data.get('user_profile', {}),
+            inventory_summary=context_data.get('inventory_summary', ''),
+            meal_plan_summary=context_data.get('meal_plan_summary', ''),
+            history=history,
+            route=None,
+            retrieved_data=None,
+            user_preferences=user_preferences, # Pre-loaded preferences
+            extracted_feedback=None,
+            response="",
+            adjustment_result=None,
+            monitoring_warnings=None
+        )
         
-        # Stream it word by word
-        words = full_response.split()
-        for i, word in enumerate(words):
-            yield word + (" " if i < len(words) - 1 else "")
+        app = self.build_graph(thread_id)
+        
+        config = {"configurable": {"thread_id": thread_id}} if thread_id else None
+        
+        # Stream execution steps
+        final_response = ""
+        response_yielded = False
+        final_messages = None
+        
+        # 1. Run the Graph (Preprocessing Phase)
+        # The graph will prepare the prompt/messages but NOT call the LLM
+        for output in app.stream(initial_state, config=config):
+            for key, value in output.items():
+                
+                # Check if we have prepared messages
+                if value and 'final_messages' in value and value['final_messages']:
+                    final_messages = value['final_messages']
+                
+                # Check if we have a static response (e.g. from adjustment)
+                if 'response' in value and value['response']:
+                    final_response = value['response']
+                    yield final_response
+                    response_yielded = True
+                    
+                # Yield status updates
+                if not response_yielded:
+                    if key == "load_preferences":
+                        yield "__STATUS__: Loading your preferences..."
+                    elif key == "extract_feedback":
+                        yield "__STATUS__: Analyzing your input..."
+                    elif key == "route_query":
+                        route = value.get('route')
+                        if route == 'meal_retrieval':
+                            yield "__STATUS__: Searching your meal plan..."
+                        elif route == 'calorie_estimation':
+                            yield "__STATUS__: Analyzing food items..."
+                        elif route == 'meal_adjustment':
+                            yield "__STATUS__: Processing meal adjustment..."
+                        else:
+                            yield "__STATUS__: Thinking..."
+                    elif key == "retrieve_meals":
+                        yield "__STATUS__: Preparing response..."
+                    elif key == "estimate_calories":
+                        yield "__STATUS__: Preparing response..."
+                    elif key == "adjust_meal":
+                        yield "__STATUS__: Verifying health constraints..."
+                    elif key == "monitor_changes":
+                        yield "__STATUS__: Preparing response..."
+
+        # 2. Stream the LLM Response (Streaming Phase)
+        # If we have prepared messages and no response yet, stream the LLM
+        if final_messages and not response_yielded:
+            try:
+                if self.chat_model:
+                    for token in self.chat_model.stream(final_messages):
+                        content = token.content
+                        if content:
+                            final_response += content
+                            yield content
+                            response_yielded = True
+                else:
+                    yield "I'm currently in offline mode."
+                    final_response = "I'm currently in offline mode."
+            except Exception as e:
+                err_msg = f"Error generating response: {str(e)}"
+                yield err_msg
+                final_response = err_msg
+        else:
+            # Fallback if no messages and no response
+            pass
+
+        # 3. Fallback if no messages and no response
+        if not response_yielded and not final_response:
+            final_response = "I couldn't generate a response. Please try again."
+            yield final_response
+            
+        # 4. Post-Processing (Update State/DB if needed)
+        # We might want to update the graph state with the final response for memory
+        # But since we handle persistence in the UI layer (views/chat.py), this is optional here.
+        # However, if we want extract_feedback to work on the response, we might need to run it now.
+        # But extract_feedback currently only uses user_input, so we are good.
 

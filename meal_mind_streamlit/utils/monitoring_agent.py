@@ -60,17 +60,17 @@ class MonitoringAgent:
             
             # Macro Checks (Threshold: +/- 20%)
             # Protein
-            prot_diff = actual.get('protein', 0) - target_protein
+            prot_diff = actual.get('protein_g', 0) - target_protein
             if target_protein > 0 and (prot_diff / target_protein) < -0.2:
-                 warnings.append(f"⚠️ **Protein Alert**: You're low on protein today ({int(actual.get('protein', 0))}g vs {int(target_protein)}g).")
+                 warnings.append(f"⚠️ **Protein Alert**: You're low on protein today ({int(actual.get('protein_g', 0))}g vs {int(target_protein)}g).")
             
             # Carbs
-            carb_diff = actual.get('carbohydrates', 0) - target_carbs
+            carb_diff = actual.get('carbohydrates_g', 0) - target_carbs
             if target_carbs > 0 and (carb_diff / target_carbs) > 0.2:
                  warnings.append(f"⚠️ **Carb Alert**: High carbohydrate intake today.")
             
             # Fat
-            fat_diff = actual.get('fat', 0) - target_fat
+            fat_diff = actual.get('fat_g', 0) - target_fat
             if target_fat > 0 and (fat_diff / target_fat) > 0.2:
                  warnings.append(f"⚠️ **Fat Alert**: High fat intake today.")
 

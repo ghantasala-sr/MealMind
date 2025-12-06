@@ -9,8 +9,11 @@ from datetime import datetime, timedelta
 from langgraph.graph import StateGraph, END
 import json
 
-# Add meal_mind_streamlit to path
-sys.path.insert(0, '/Users/srinivasarithikghantasala/Documents/Masters/Fall_2025/Data Engineering/User_Interaction/meal_mind_streamlit')
+# Add project root to path (dynamically finds the parent directory of 'utils')
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from utils.db import get_snowflake_connection, get_snowpark_session
 from utils.agent import MealPlanAgentWithExtraction
@@ -48,21 +51,25 @@ class MealPlanWorkflow:
         
         cursor = self.conn.cursor()
         try:
+            # Removed username from query as it's not in planning_schedule
             cursor.execute("""
-                SELECT user_id, username, next_plan_date
+                SELECT DISTINCT user_id, next_plan_date, schedule_id
                 FROM planning_schedule
-                WHERE next_plan_date = %s
+                WHERE next_plan_date <= %s
                 AND status = 'ACTIVE'
                 ORDER BY user_id
             """, (state['current_date'],))
             
             users = []
+            seen_users = set()
             for row in cursor.fetchall():
-                users.append({
-                    'user_id': row[0],
-                    'username': row[1],
-                    'next_plan_date': row[2]
-                })
+                if row[0] not in seen_users:
+                    users.append({
+                        'user_id': row[0],
+                        'next_plan_date': row[1],
+                        'schedule_id': row[2]
+                    })
+                    seen_users.add(row[0])
             
             state['users_to_process'] = users
             state['current_user_index'] = 0
@@ -126,8 +133,8 @@ class MealPlanWorkflow:
             
             # Get inventory
             cursor.execute("""
-                SELECT ingredient, quantity, unit, category
-                FROM user_inventory
+                SELECT item_name, quantity, unit, category
+                FROM inventory
                 WHERE user_id = %s AND quantity > 0
             """, (user_id,))
             
@@ -238,16 +245,103 @@ INSTRUCTIONS:
 9. Ensure each day meets the daily nutritional targets
 10. Provide variety throughout the week
 
-Return the meal plan in valid JSON format."""
+Return the meal plan in valid JSON format with this EXACT structure:
+{{
+  "user_summary": {{
+    "user_id": "...",
+    "health_goal": "...",
+    "daily_targets": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0, "fiber_g": 0 }},
+    "restrictions": [],
+    "allergies": []
+  }},
+  "meal_plan": {{
+    "week_summary": {{
+      "average_daily_calories": 0,
+      "average_daily_protein": 0,
+      "average_daily_carbs": 0,
+      "average_daily_fat": 0,
+      "average_daily_fiber": 0,
+      "inventory_utilization_rate": 0,
+      "future_suggestions": [
+        {{ "item": "Name", "reason": "Why", "category": "Category", "suggested_quantity": 0, "unit": "unit" }}
+      ]
+    }},
+    "days": [
+      {{
+        "day": 1,
+        "day_name": "Day Name",
+        "total_nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0, "fiber_g": 0 }},
+        "inventory_impact": {{ "items_used": 0, "new_purchases_needed": 0 }},
+        "meals": {{
+          "breakfast": {{
+            "meal_name": "Name",
+            "ingredients_with_quantities": [
+              {{ "ingredient": "Name", "quantity": 0, "unit": "unit", "from_inventory": false }}
+            ],
+            "nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0 }},
+            "recipe": {{ "prep_steps": [], "cooking_instructions": [] }}
+          }},
+          "lunch": {{ "meal_name": "Name", "ingredients_with_quantities": [], "nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0 }}, "recipe": {{ "prep_steps": [], "cooking_instructions": [] }} }},
+          "snacks": {{ "meal_name": "Name", "ingredients_with_quantities": [], "nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0 }}, "recipe": {{ "prep_steps": [], "cooking_instructions": [] }} }},
+          "dinner": {{ "meal_name": "Name", "ingredients_with_quantities": [], "nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0 }}, "recipe": {{ "prep_steps": [], "cooking_instructions": [] }} }}
+        }}
+      }}
+    ]
+  }},
+  "recommendations": {{
+    "hydration": "...",
+    "shopping_list_summary": {{
+      "proteins": [{{ "item": "Name", "total_quantity_needed": 0, "quantity_in_inventory": 0, "quantity_to_purchase": 0, "unit": "unit" }}],
+      "grains": [], "vegetables": [], "fruits": [], "pantry_items": []
+    }}
+  }},
+  "metadata": {{ "generated_at": "ISO date", "version": "1.0" }}
+}}"""
 
+            # Store prompt for next agent
+            state['user_data']['prompt'] = prompt
+            
+            print(f"[AGENT 2] Data aggregation complete for {user_id}")
+            return state
+            
+        except Exception as e:
+            print(f"[AGENT 2] Error aggregating data for {user_id}: {e}")
+            state['errors'].append({
+                'agent': 'aggregate_data',
+                'user_id': user_id,
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            })
+            return state
+
+    # ==================== AGENT 3: MEAL PLAN GENERATOR ====================
+    def agent_generate_meal_plan(self, state: MealPlanGenerationState) -> MealPlanGenerationState:
+        """Generate meal plan using the constructed prompt"""
+        if not state['user_data'] or 'prompt' not in state['user_data']:
+            return state
+            
+        user_id = state['user_data']['user_id']
+        prompt = state['user_data']['prompt']
+        profile = state['user_data']['profile']
+        
+        print(f"[AGENT 3] Generating meal plan for {user_id}")
+        
+        try:
+            # Initialize agent
+            agent = MealPlanAgentWithExtraction(self.session)
+            
             # Generate plan
-            result = meal_agent.generate_meal_plan(
+            result = agent.generate_meal_plan(
                 prompt=prompt,
                 user_profile=profile
             )
             
-            state['generated_plan'] = result
-            print(f"[AGENT 3] Successfully generated plan for {user_id}")
+            if result:
+                state['generated_plan'] = result
+                print(f"[AGENT 3] Successfully generated plan for {user_id}")
+            else:
+                raise Exception("Agent returned None")
+                
             return state
             
         except Exception as e:
@@ -264,6 +358,10 @@ Return the meal plan in valid JSON format."""
     # ==================== AGENT 4: PLAN PERSISTER ====================
     def agent_persist_plan(self, state: MealPlanGenerationState) -> MealPlanGenerationState:
         """Save generated plan to database with retry logic"""
+        # If no user was processed, skip persistence
+        if not state.get('current_user'):
+            return state
+
         if not state['generated_plan'] or not state['user_data']:
             state['retry_count'] += 1
             if state['retry_count'] <= self.max_retries:
@@ -282,23 +380,34 @@ Return the meal plan in valid JSON format."""
         cursor = self.conn.cursor()
         try:
             # Save meal plan (using existing helpers)
-            from utils.helpers import save_meal_plan_to_db
+            from utils.helpers import save_meal_plan
             
-            save_meal_plan_to_db(
+            # Get schedule_id from user object
+            schedule_id = state['current_user'].get('schedule_id')
+            
+            save_meal_plan(
                 conn=self.conn,
                 user_id=user_id,
-                meal_plan=plan
+                schedule_id=schedule_id,
+                meal_plan_data=plan
             )
             
             # Update planning_schedule
             next_date = datetime.now().date() + timedelta(days=7)
+            
+            # Deactivate OTHER schedules to ensure no duplicates
+            cursor.execute("""
+                UPDATE planning_schedule 
+                SET status = 'INACTIVE' 
+                WHERE user_id = %s AND schedule_id != %s
+            """, (user_id, schedule_id))
+            
+            # Update current schedule
             cursor.execute("""
                 UPDATE planning_schedule
-                SET next_plan_date = %s,
-                    last_generated_at = CURRENT_TIMESTAMP(),
-                    generation_count = generation_count + 1
-                WHERE user_id = %s
-            """, (next_date, user_id))
+                SET next_plan_date = %s
+                WHERE schedule_id = %s
+            """, (next_date, schedule_id))
             
             self.conn.commit()
             
@@ -327,17 +436,28 @@ Return the meal plan in valid JSON format."""
         return state
     
     # ==================== ROUTING LOGIC ====================
-    def should_retry(self, state: MealPlanGenerationState) -> str:
-        """Decide if we should retry or move to next user"""
+    def check_users_available(self, state: MealPlanGenerationState) -> str:
+        """Check if any users were found"""
+        if state['users_to_process'] and len(state['users_to_process']) > 0:
+            return 'process'
+        return 'end'
+
+    def route_next_step(self, state: MealPlanGenerationState) -> str:
+        """Decide next step: retry, next user, or end"""
+        # Check for retry
         if state['retry_count'] > 0 and state['retry_count'] <= self.max_retries:
             return 'retry'
-        return 'next_user'
-    
-    def has_more_users(self, state: MealPlanGenerationState) -> str:
-        """Check if there are more users to process"""
+        
+        # Move to next user
         state['current_user_index'] += 1
+        state['retry_count'] = 0 # Reset retry count for next user
+        state['current_user'] = None # Clear current user
+        state['user_data'] = None # Clear user data
+        state['generated_plan'] = None # Clear plan
+        
         if state['current_user_index'] < len(state['users_to_process']):
-            return 'process_next'
+            return 'next_user'
+        
         return 'complete'
     
     # ==================== BUILD WORKFLOW ====================
@@ -353,26 +473,27 @@ Return the meal plan in valid JSON format."""
         
         # Define edges
         workflow.set_entry_point("fetch_users")
-        workflow.add_edge("fetch_users", "aggregate_data")
+        
+        # Conditional edge from fetch_users
+        workflow.add_conditional_edges(
+            "fetch_users",
+            self.check_users_available,
+            {
+                "process": "aggregate_data",
+                "end": END
+            }
+        )
+        
         workflow.add_edge("aggregate_data", "generate_plan")
         workflow.add_edge("generate_plan", "persist_plan")
         
         # Conditional routing from persist
         workflow.add_conditional_edges(
             "persist_plan",
-            self.should_retry,
+            self.route_next_step,
             {
-                "retry": "aggregate_data",  # Retry from data aggregation
-                "next_user": "aggregate_data"  # Process next user
-            }
-        )
-        
-        # Check if more users after persist
-        workflow.add_conditional_edges(
-            "aggregate_data",
-            self.has_more_users,
-            {
-                "process_next": "aggregate_data",
+                "retry": "aggregate_data",  # Retry for same user
+                "next_user": "aggregate_data",  # Process next user
                 "complete": END
             }
         )

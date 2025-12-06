@@ -6,6 +6,7 @@ from utils.feedback_agent import FeedbackAgent
 from langchain.schema import HumanMessage, AIMessage
 import time
 
+@st.fragment
 def render_chat(conn, user_id):
     """Render the enhanced chat interface with intelligent routing"""
     
@@ -57,7 +58,7 @@ def render_chat(conn, user_id):
         st.session_state.thread_list_cache = thread_mgr.get_user_threads(user_id, limit=3)
     threads = st.session_state.thread_list_cache
     
-    col1, col2, col3 = st.columns([0.6, 0.3, 0.1])
+    col1, col2, col3, col4 = st.columns([0.5, 0.3, 0.1, 0.1])
     with col1:
         st.title("💬 Chat with Meal Mind")
     with col2:
@@ -97,6 +98,29 @@ def render_chat(conn, user_id):
                 AIMessage(content="Hello! I'm Meal Mind. How can I help you with your nutrition today?")
             ]
             st.rerun()
+    with col4:
+        if st.button("🔄", help="Refresh Context (Profile, Inventory, Meal Plan)"):
+            # Clear all caches
+            if "chat_context_cache" in st.session_state:
+                del st.session_state.chat_context_cache
+            if "user_preferences_cache" in st.session_state:
+                del st.session_state.user_preferences_cache
+            if "chat_agent" in st.session_state:
+                del st.session_state.chat_agent
+            
+            # Clear Streamlit data caches for specific functions
+            get_user_profile.clear()
+            get_user_inventory.clear()
+            get_latest_meal_plan.clear()
+            
+            # Also clear meal plan view caches so updates (like adding food) show up there
+            from utils.db import get_daily_meals_for_plan, get_weekly_meal_details
+            get_daily_meals_for_plan.clear()
+            get_weekly_meal_details.clear()
+            
+            st.toast("Context refreshed! Reloading...", icon="🔄")
+            time.sleep(1)
+            st.rerun()
     
     st.caption("🤖 Ask questions about your meal plan, inventory, or get personalized cooking tips!")
     st.divider()
@@ -119,8 +143,20 @@ def render_chat(conn, user_id):
                 AIMessage(content="Hello! I'm Meal Mind. How can I help you with your nutrition today?")
             ]
 
-    # Initialize Chat Agent with Router
+    # Initialize Chat Agent with Router (Eager Init will happen inside Agent)
     if "chat_agent" not in st.session_state:
+        import importlib
+        import utils.chat_agent
+        importlib.reload(utils.chat_agent)
+        from utils.chat_agent import ChatAgent # Re-import class after reload
+        
+        session = get_snowpark_session()
+        # Note: We are using the original ChatAgent class here, not MealRouterAgent for now to debug
+        # Or if MealRouterAgent inherits from ChatAgent, we need to reload that too.
+        # Let's check imports. The file uses MealRouterAgent.
+        
+        from utils.meal_router_agent import MealRouterAgent
+        
         session = get_snowpark_session()
         st.session_state.chat_agent = MealRouterAgent(session, conn)
 
@@ -128,6 +164,69 @@ def render_chat(conn, user_id):
     if "feedback_agent" not in st.session_state:
         session = get_snowpark_session()
         st.session_state.feedback_agent = FeedbackAgent(conn, session)
+
+    # --- OPTIMIZATION: Pre-load and Cache Context & Preferences ---
+    if "chat_context_cache" not in st.session_state or not st.session_state.chat_context_cache:
+        with st.spinner("Loading your profile and preferences..."):
+            # 1. Load Context (Profile, Inventory, Meal Plan)
+            from concurrent.futures import ThreadPoolExecutor
+            # from utils.db import get_user_profile, get_user_inventory, get_latest_meal_plan (Already imported globally)
+            from utils.db import get_meals_by_criteria # Import this to get detailed meals
+            
+            # We can also fetch preferences here in parallel
+            def get_prefs(agent, uid):
+                return agent.get_user_preferences(uid)
+
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                future_profile = executor.submit(get_user_profile, conn, user_id)
+                future_inventory = executor.submit(get_user_inventory, conn, user_id)
+                future_meal_plan = executor.submit(get_latest_meal_plan, conn, user_id)
+                # Pass the agent instance directly, don't access st.session_state inside thread
+                future_prefs = executor.submit(get_prefs, st.session_state.feedback_agent, user_id)
+                # Fetch detailed meals for the week
+                future_daily_meals = executor.submit(get_meals_by_criteria, conn, user_id)
+                
+                user_profile = future_profile.result()
+                inventory_df = future_inventory.result()
+                meal_plan_data = future_meal_plan.result()
+                user_prefs = future_prefs.result()
+                daily_meals_list = future_daily_meals.result()
+            
+            # Format inventory summary
+            if not inventory_df.empty:
+                inv_summary = inventory_df.head(20).to_string()
+            else:
+                inv_summary = "Inventory is empty."
+            
+            # Format meal plan summary
+            if meal_plan_data:
+                mp_summary = str(meal_plan_data.get('meal_plan', {}).get('week_summary', ''))
+                meal_plan_summary = f"Week Summary: {mp_summary}"
+                
+                # Format daily meals for context
+                if daily_meals_list:
+                    import json
+                    # Group by day
+                    days = {}
+                    for meal in daily_meals_list:
+                        day = meal['day_name']
+                        if day not in days:
+                            days[day] = []
+                        days[day].append(f"{meal['meal_type'].title()}: {meal['meal_name']}")
+                    
+                    daily_details = "\n".join([f"{day}: {', '.join(meals)}" for day, meals in days.items()])
+                    meal_plan_summary += f"\n\nDaily Schedule:\n{daily_details}"
+            else:
+                meal_plan_summary = "No active meal plan."
+
+            # Store in Session State
+            st.session_state.chat_context_cache = {
+                "user_profile": user_profile,
+                "inventory_summary": inv_summary,
+                "meal_plan_summary": meal_plan_summary
+            }
+            st.session_state.user_preferences_cache = user_prefs
+    # -----------------------------------------------------------
 
     # Create a container for messages
     message_container = st.container(height=500)
@@ -192,77 +291,32 @@ def render_chat(conn, user_id):
         )
         save_thread.start()
 
-        # Prepare context data
+        # Get streaming response from agent
         try:
-            # Fetch fresh context
-            # Fetch fresh context with caching and status updates
-            context_data = {}
-            
-            # Check if we have cached context
-            if "chat_context_cache" in st.session_state:
-                context_data = st.session_state.chat_context_cache
-            
-            # If cache is missing or empty, fetch data
-            if not context_data:
-                with st.status("Thinking...", expanded=True) as status:
-                    status.write("Analyzing your request...")
-                    
-                    # Fetch Profile
-                    status.write("Checking your profile...")
-                    user_profile = get_user_profile(conn, user_id)
-                    
-                    # Fetch Inventory
-                    status.write("Scanning inventory...")
-                    inventory_df = get_user_inventory(conn, user_id)
-                    
-                    # Fetch Meal Plan
-                    status.write("Reviewing meal plan...")
-                    meal_plan_data = get_latest_meal_plan(conn, user_id)
-                    
-                    # Format inventory summary
-                    if not inventory_df.empty:
-                        inv_summary = inventory_df.head(20).to_string()  # Limit for token efficiency
-                    else:
-                        inv_summary = "Inventory is empty."
-                    
-                    # Format meal plan summary
-                    if meal_plan_data:
-                        mp_summary = str(meal_plan_data.get('meal_plan', {}).get('week_summary', ''))
-                        meal_plan_summary = f"Week Summary: {mp_summary}"
-                    else:
-                        meal_plan_summary = "No active meal plan."
-
-                    context_data = {
-                        "user_profile": user_profile,
-                        "inventory_summary": inv_summary,
-                        "meal_plan_summary": meal_plan_summary
-                    }
-                    
-                    # Cache the data
-                    st.session_state.chat_context_cache = context_data
-                    
-                    status.update(label="Generating response...", state="running", expanded=False)
-            else:
-                 # If using cache, just show a quick status
-                 with st.status("Generating response...", expanded=False, state="running") as status:
-                     time.sleep(0.1) # Tiny pause for UI smoothness
-
-            # Get streaming response from agent
             with message_container:
                 with st.chat_message("assistant", avatar="🤖"):
                     message_placeholder = st.empty()
+                    message_placeholder.markdown("Thinking...")
                     full_response = ""
                     
                     # Stream the response
+                    # Pass thread_id for checkpointer
                     for chunk in st.session_state.chat_agent.run_chat_stream(
                         user_input=prompt,
                         user_id=user_id,
                         history=st.session_state.messages[:-1],
-                        context_data=context_data
+                        context_data=st.session_state.chat_context_cache,
+                        user_preferences=st.session_state.user_preferences_cache,
+                        thread_id=st.session_state.current_thread_id
                     ):
-                        full_response += chunk
-                        message_placeholder.markdown(full_response + "▌")
-                        time.sleep(0.02)  # Slight delay for visual effect
+                        if chunk.startswith("__STATUS__:"):
+                            status_msg = chunk.replace("__STATUS__: ", "")
+                            message_placeholder.markdown(f"*{status_msg}*")
+                            # No sleep here for speed
+                        else:
+                            full_response += chunk
+                            message_placeholder.markdown(full_response + "▌")
+                            # No sleep here for speed
                     
                     # Final response without cursor
                     message_placeholder.markdown(full_response)

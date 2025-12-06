@@ -245,7 +245,7 @@ def create_tables(conn):
         cursor.close()
 
 
-# @st.cache_resource
+@st.cache_resource
 def get_snowflake_connection():
     """Get Snowflake connection"""
     try:
@@ -284,13 +284,15 @@ def get_snowpark_session():
         st.stop()
 
 
-def get_user_profile(conn, user_id):
+@st.cache_data(ttl=600)
+def get_user_profile(_conn, user_id):
     """Fetch user profile as a dictionary"""
     try:
-        cursor = conn.cursor()
+        cursor = _conn.cursor()
         cursor.execute("""
-            SELECT username, age, gender, height_cm, weight_kg, activity_level, 
-                   health_goal, dietary_restrictions, food_allergies, daily_calories
+            SELECT username, age, gender, height_cm, weight_kg, bmi, activity_level, 
+                   health_goal, dietary_restrictions, food_allergies, daily_calories,
+                   daily_protein, daily_carbohydrate, daily_fat, daily_fiber, updated_at
             FROM users 
             WHERE user_id = %s
         """, (user_id,))
@@ -307,11 +309,13 @@ def get_user_profile(conn, user_id):
         cursor.close()
 
 
-def get_user_inventory(conn, user_id):
+
+@st.cache_data(ttl=60)
+def get_user_inventory(_conn, user_id):
     """Fetch user inventory as a DataFrame-like string or list"""
     import pandas as pd
     try:
-        cursor = conn.cursor()
+        cursor = _conn.cursor()
         cursor.execute("""
             SELECT item_name, quantity, unit, category
             FROM inventory
@@ -331,11 +335,13 @@ def get_user_inventory(conn, user_id):
         cursor.close()
 
 
-def get_latest_meal_plan(conn, user_id):
+
+@st.cache_data(ttl=60)
+def get_latest_meal_plan(_conn, user_id):
     """Fetch the latest active meal plan"""
     import json
     try:
-        cursor = conn.cursor()
+        cursor = _conn.cursor()
         cursor.execute("""
             SELECT week_summary, plan_name, start_date, end_date
             FROM meal_plans
@@ -373,7 +379,7 @@ def get_latest_meal_plan(conn, user_id):
         cursor.close()
 
 
-def get_meals_by_criteria(conn, user_id, day_number=None, meal_type=None):
+def get_meals_by_criteria(conn, user_id, day_number=None, meal_type=None, meal_date=None):
     """Retrieve meals based on day and/or meal type from the latest active meal plan"""
     import json
     try:
@@ -404,6 +410,10 @@ def get_meals_by_criteria(conn, user_id, day_number=None, meal_type=None):
         if day_number is not None:
             query += " AND dm.day_number = %s"
             params.append(day_number)
+            
+        if meal_date is not None:
+            query += " AND dm.meal_date = %s"
+            params.append(meal_date)
         
         if meal_type is not None:
             query += " AND md.meal_type = %s"
@@ -697,6 +707,12 @@ def update_meal_detail(conn, detail_id, meal_data):
             meal_data.get('difficulty_level', 'medium'),
             detail_id
         ))
+
+        
+        if cursor.rowcount == 0:
+            print(f"WARNING: update_meal_detail updated 0 rows for detail_id {detail_id}")
+            return False
+            
         conn.commit()
         return True
     except Exception as e:
@@ -748,5 +764,186 @@ def update_daily_nutrition(conn, daily_meal_id, total_nutrition):
     except Exception as e:
         st.error(f"Error updating daily nutrition: {e}")
         return False
+    finally:
+        cursor.close()
+@st.cache_data(ttl=600)
+def get_dashboard_stats(_conn, user_id):
+    """Fetch dashboard stats efficiently"""
+    return get_user_profile(_conn, user_id)
+
+@st.cache_data(ttl=600)
+def get_meal_plan_overview(_conn, user_id, specific_plan_id=None):
+    """Fetch active meal plan overview"""
+    import json
+    try:
+        cursor = _conn.cursor()
+        
+        if specific_plan_id:
+            cursor.execute("""
+                SELECT p.plan_id,
+                       p.plan_name,
+                       p.start_date,
+                       p.end_date,
+                       p.week_summary,
+                       p.created_at,
+                       p.status
+                FROM meal_plans p
+                WHERE p.plan_id = %s AND p.user_id = %s
+            """, (specific_plan_id, user_id))
+        else:
+            cursor.execute("""
+                SELECT p.plan_id,
+                       p.plan_name,
+                       p.start_date,
+                       p.end_date,
+                       p.week_summary,
+                       p.created_at,
+                       p.status
+                FROM meal_plans p
+                WHERE p.user_id = %s
+                ORDER BY 
+                    CASE 
+                        WHEN CURRENT_DATE() BETWEEN p.start_date AND p.end_date THEN 1 
+                        ELSE 2 
+                    END,
+                    p.created_at DESC 
+                LIMIT 1
+            """, (user_id,))
+        
+        row = cursor.fetchone()
+        if row:
+            columns = [col[0].lower() for col in cursor.description]
+            return dict(zip(columns, row))
+        return None
+    except Exception as e:
+        st.error(f"Error fetching meal plan overview: {e}")
+        return None
+    finally:
+        cursor.close()
+
+def get_future_meal_plan(_conn, user_id):
+    """Check if a future meal plan exists"""
+    try:
+        cursor = _conn.cursor()
+        cursor.execute("""
+            SELECT plan_id, start_date
+            FROM meal_plans
+            WHERE user_id = %s
+            AND start_date > CURRENT_DATE()
+            ORDER BY start_date ASC
+            LIMIT 1
+        """, (user_id,))
+        row = cursor.fetchone()
+        if row:
+            return {'plan_id': row[0], 'start_date': row[1]}
+        return None
+    except Exception as e:
+        return None
+    finally:
+        cursor.close()
+
+@st.cache_data(ttl=600)
+def get_daily_meals_for_plan(_conn, plan_id):
+    """Fetch daily meals for a specific plan"""
+    try:
+        cursor = _conn.cursor()
+        cursor.execute("""
+            SELECT meal_id,
+                   day_number,
+                   day_name,
+                   meal_date,
+                   total_nutrition,
+                   inventory_impact
+            FROM daily_meals
+            WHERE plan_id = %s
+            ORDER BY day_number
+        """, (plan_id,))
+        
+        rows = cursor.fetchall()
+        if rows:
+            columns = [col[0].lower() for col in cursor.description]
+            return [dict(zip(columns, row)) for row in rows]
+        return []
+    except Exception as e:
+        st.error(f"Error fetching daily meals: {e}")
+        return []
+    finally:
+        cursor.close()
+
+@st.cache_data(ttl=600)
+def get_meal_details_for_day_view(_conn, meal_id):
+    """Fetch meal details for a specific day"""
+    try:
+        cursor = _conn.cursor()
+        cursor.execute("""
+            SELECT meal_type,
+                   meal_name,
+                   ingredients_with_quantities,
+                   recipe,
+                   nutrition,
+                   preparation_time,
+                   cooking_time,
+                   servings,
+                   serving_size,
+                   difficulty_level
+            FROM meal_details
+            WHERE meal_id = %s
+            ORDER BY CASE meal_type
+                         WHEN 'breakfast' THEN 1
+                         WHEN 'lunch' THEN 2
+                         WHEN 'snacks' THEN 3
+                         WHEN 'dinner' THEN 4
+                         END
+        """, (meal_id,))
+        
+        rows = cursor.fetchall()
+        if rows:
+            columns = [col[0].lower() for col in cursor.description]
+            return [dict(zip(columns, row)) for row in rows]
+        return []
+    except Exception as e:
+        st.error(f"Error fetching meal details: {e}")
+        return []
+    finally:
+        cursor.close()
+
+@st.cache_data(ttl=600)
+def get_weekly_meal_details(_conn, plan_id):
+    """Fetch ALL meal details for a specific plan (optimized for fast day switching)"""
+    try:
+        cursor = _conn.cursor()
+        cursor.execute("""
+            SELECT dm.day_number,
+                   dm.meal_id,
+                   md.meal_type,
+                   md.meal_name,
+                   md.ingredients_with_quantities,
+                   md.recipe,
+                   md.nutrition,
+                   md.preparation_time,
+                   md.cooking_time,
+                   md.servings,
+                   md.serving_size,
+                   md.difficulty_level
+            FROM daily_meals dm
+            JOIN meal_details md ON dm.meal_id = md.meal_id
+            WHERE dm.plan_id = %s
+            ORDER BY dm.day_number, 
+                     CASE md.meal_type
+                         WHEN 'breakfast' THEN 1
+                         WHEN 'lunch' THEN 2
+                         WHEN 'snacks' THEN 3
+                         WHEN 'dinner' THEN 4
+                     END
+        """, (plan_id,))
+        
+        rows = cursor.fetchall()
+        if rows:
+            columns = [col[0].lower() for col in cursor.description]
+            return [dict(zip(columns, row)) for row in rows]
+        return []
+    except Exception as e:
+        st.error(f"Error fetching weekly meal details: {e}")
+        return []
     finally:
         cursor.close()

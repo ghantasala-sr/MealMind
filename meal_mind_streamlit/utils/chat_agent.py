@@ -36,8 +36,22 @@ class ChatAgent:
         inventory = state.get('inventory_summary', 'No inventory data available.')
         meal_plan = state.get('meal_plan_summary', 'No meal plan generated yet.')
         
+        from datetime import datetime
+        
+        # DEBUG: Print the meal plan context to terminal
+        print("\n" + "="*50)
+        print("DEBUG: CHAT AGENT RETRIEVED MEAL PLAN CONTEXT")
+        print("="*50)
+        print(meal_plan)
+        print("="*50 + "\n")
+        
+        current_date_str = datetime.now().strftime('%A, %B %d, %Y')
+        print(f"DEBUG: SYSTEM DATE IS {current_date_str}")
+
         system_prompt = f"""
         You are Meal Mind AI, a helpful nutrition and meal planning assistant.
+        
+        TODAY'S DATE: {current_date_str}
         
         USER PROFILE:
         - Name: {profile.get('username', 'User')}
@@ -50,6 +64,7 @@ class ChatAgent:
         
         CURRENT MEAL PLAN SUMMARY:
         {meal_plan}
+        (Note: If "Daily Schedule" is present above, use it to answer specific questions about what to eat on specific days.)
         
         YOUR ROLE:
         - Answer questions about the user's meal plan, inventory, and nutrition.

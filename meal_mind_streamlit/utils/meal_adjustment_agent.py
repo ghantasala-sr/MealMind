@@ -43,29 +43,46 @@ class MealAdjustmentAgent:
         if not self.llm:
             return {"status": "error", "message": "Agent offline"}
 
-        # 1. Analyze Intent and Generate Data
+        # 1. Fetch Current Meal Context FIRST
+        daily_meal_id = get_daily_meal_id(self.conn, user_id, date)
+        if not daily_meal_id:
+            return {"status": "error", "message": "No meal plan found for this date."}
+        
+        detail_id = get_meal_detail_id(self.conn, daily_meal_id, meal_type)
+        if not detail_id:
+            return {"status": "error", "message": f"No {meal_type} found for this date."}
+            
+        current_meal = get_meal_detail_by_id(self.conn, detail_id)
+        current_meal_context = json.dumps(current_meal, indent=2) if current_meal else "No existing meal data."
+
+        # 2. Analyze Intent and Generate Data
         system_prompt = f"""You are a nutrition assistant. The user wants to update their {meal_type} for {date}.
         
-        Determine if this is:
-        1. A REPORT of food already eaten (e.g., "I had a burger", "I went to a buffet").
-        2. A REQUEST for a new recipe/alternative (e.g., "I want pasta instead", "Give me something else").
-        3. An APPEND to the current meal (e.g., "I also had a lemonade", "Add an apple").
+        CURRENT MEAL DATA:
+        {current_meal_context}
         
-        Generate a JSON response with the new meal details.
+        Determine the user's intent:
+        1. REPORT: User ate something completely different (overwrite current meal).
+        2. REQUEST: User wants a new recipe/alternative (overwrite current meal with new suggestion).
+        3. APPEND: User added an item to the current meal (keep existing, add new).
+        4. REMOVE: User removed an item from the current meal (keep rest, remove item).
+        5. REPLACE: User swapped an item (remove old, add new).
         
-        IMPORTANT:
-        - If it's a REPORT (restaurant/buffet), estimate nutrition accurately. Recipe instructions can be "Eaten out".
-        - If it's a REQUEST, generate a healthy recipe matching the description.
-        - If it's an APPEND, generate details ONLY for the NEW item(s) to be added.
-        - Return ONLY the JSON.
+        TASK:
+        Generate the FULL UPDATED JSON for the meal.
+        - If APPEND/REMOVE/REPLACE: Modify the CURRENT MEAL DATA accordingly. Update nutrition, ingredients, and name.
+        - If REPORT/REQUEST: Ignore current data and generate new data.
+        - Calculate the new total nutrition accurately.
+        
+        Return ONLY the JSON.
         """
         
-        user_prompt = f"""Analyze the input: "{user_input}"
+        user_prompt = f"""User Request: "{user_input}"
         
         Format:
         {{
-            "intent": "report" or "request" or "append",
-            "meal_name": "Name of the meal (or item name if append)",
+            "intent": "report/request/append/remove/replace",
+            "meal_name": "Updated Name",
             "ingredients_with_quantities": [{{"ingredient": "name", "quantity": "amount", "unit": "unit"}}],
             "nutrition": {{
                 "calories": 0,
@@ -100,44 +117,13 @@ class MealAdjustmentAgent:
             
             meal_data = json.loads(content)
             
-            # 2. Update Database
-            daily_meal_id = get_daily_meal_id(self.conn, user_id, date)
-            if not daily_meal_id:
-                return {"status": "error", "message": "No meal plan found for this date."}
-            
-            detail_id = get_meal_detail_id(self.conn, daily_meal_id, meal_type)
-            if not detail_id:
-                return {"status": "error", "message": f"No {meal_type} found for this date."}
-            
-            # Handle APPEND intent
-            if meal_data.get('intent') == 'append':
-                current_meal = get_meal_detail_by_id(self.conn, detail_id)
-                if current_meal:
-                    # Merge names
-                    meal_data['meal_name'] = f"{current_meal['meal_name']} + {meal_data['meal_name']}"
-                    
-                    # Merge ingredients
-                    current_ingredients = current_meal.get('ingredients_with_quantities', [])
-                    new_ingredients = meal_data.get('ingredients_with_quantities', [])
-                    meal_data['ingredients_with_quantities'] = current_ingredients + new_ingredients
-                    
-                    # Merge nutrition
-                    current_nutrition = current_meal.get('nutrition', {})
-                    new_nutrition = meal_data.get('nutrition', {})
-                    
-                    merged_nutrition = {}
-                    for key in ['calories', 'protein_g', 'carbohydrates_g', 'fat_g', 'fiber_g']:
-                        merged_nutrition[key] = current_nutrition.get(key, 0) + new_nutrition.get(key, 0)
-                    
-                    meal_data['nutrition'] = merged_nutrition
-                    
-                    # Keep existing recipe/times if not provided or just append note
-                    meal_data['recipe'] = current_meal.get('recipe', {})
-                    meal_data['preparation_time'] = current_meal.get('preparation_time', 0)
-                    meal_data['cooking_time'] = current_meal.get('cooking_time', 0)
+            # 3. Update Database (meal_data is already the full updated state)
             
             # Update the specific meal
+            print(f"DEBUG: Updating meal detail {detail_id} with data: {json.dumps(meal_data)[:100]}...")
             success = update_meal_detail(self.conn, detail_id, meal_data)
+            print(f"DEBUG: Update success: {success}")
+            
             if not success:
                 return {"status": "error", "message": "Failed to update meal in database."}
             
@@ -146,18 +132,18 @@ class MealAdjustmentAgent:
             
             total_nutrition = {
                 "calories": 0,
-                "protein": 0,
-                "carbohydrates": 0,
-                "fat": 0,
-                "fiber": 0
+                "protein_g": 0,
+                "carbohydrates_g": 0,
+                "fat_g": 0,
+                "fiber_g": 0
             }
             
             for meal in all_meals:
                 total_nutrition["calories"] += meal.get("calories", 0)
-                total_nutrition["protein"] += meal.get("protein_g", 0)
-                total_nutrition["carbohydrates"] += meal.get("carbohydrates_g", 0)
-                total_nutrition["fat"] += meal.get("fat_g", 0)
-                total_nutrition["fiber"] += meal.get("fiber_g", 0)
+                total_nutrition["protein_g"] += meal.get("protein_g", 0)
+                total_nutrition["carbohydrates_g"] += meal.get("carbohydrates_g", 0)
+                total_nutrition["fat_g"] += meal.get("fat_g", 0)
+                total_nutrition["fiber_g"] += meal.get("fiber_g", 0)
             
             # Round values
             for k, v in total_nutrition.items():

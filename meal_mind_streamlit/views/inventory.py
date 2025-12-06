@@ -24,6 +24,7 @@ def render_inventory(conn, user_id):
                         st.rerun()
 
     # Display inventory
+    # get_inventory_items is now cached in utils/helpers.py
     inventory_df = get_inventory_items(conn, user_id)
 
     if not inventory_df.empty:

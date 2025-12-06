@@ -164,9 +164,10 @@ def save_meal_plan(conn, user_id, schedule_id, meal_plan_data):
         return None
 
 
-def get_inventory_items(conn, user_id):
+@st.cache_data(ttl=600)
+def get_inventory_items(_conn, user_id):
     """Get all inventory items for a user"""
-    cursor = conn.cursor()
+    cursor = _conn.cursor()
     cursor.execute("""
                    SELECT inventory_id, item_name, quantity, unit, category, notes, updated_at
                    FROM inventory
@@ -323,6 +324,9 @@ def generate_new_meal_plan(conn, user_id):
                 schedule_id = str(uuid.uuid4())
                 tomorrow = datetime.now().date() + timedelta(days=1)
                 plan_end = tomorrow + timedelta(days=7)
+
+                # Deactivate old schedules
+                cursor.execute("UPDATE planning_schedule SET status = 'INACTIVE' WHERE user_id = %s", (user_id,))
 
                 cursor.execute("""
                                INSERT INTO planning_schedule (schedule_id, user_id, plan_start_date,
