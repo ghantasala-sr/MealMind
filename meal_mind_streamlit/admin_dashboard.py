@@ -191,20 +191,66 @@ def main():
                 st.subheader("🏆 Leaderboard")
                 
                 res_df = pd.DataFrame(results)
-                st.dataframe(
-                    res_df[["model_name", "latency", "groundedness_score", "explanation"]].style.highlight_max(subset=["groundedness_score"], color='#c8e6c9').highlight_min(subset=["latency"], color='#c8e6c9'),
-                    use_container_width=True
-                )
-                
                 # Charts
+                import altair as alt
+                
+                # Helper for Altair Charts (Duplicated for now, could be moved to utils)
+                def create_colored_bar_chart(data, x_col, y_col, title, higher_is_better=True):
+                    min_val = data[y_col].min()
+                    max_val = data[y_col].max()
+                    
+                    if higher_is_better:
+                        domain = [min_val, max_val]
+                        range_ = ['#d32f2f', '#388e3c'] 
+                    else:
+                        domain = [min_val, max_val]
+                        range_ = ['#388e3c', '#d32f2f'] 
+                        
+                    chart = alt.Chart(data).mark_bar().encode(
+                        x=alt.X(x_col, axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y(y_col, title=title),
+                        color=alt.Color(y_col, scale=alt.Scale(domain=domain, range=range_), legend=None),
+                        tooltip=[x_col, y_col]
+                    ).properties(title=title)
+                    return chart
+
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.markdown("### ⏱️ Latency (s)")
-                    st.bar_chart(res_df.set_index("model_name")["latency"])
+                    st.altair_chart(
+                        create_colored_bar_chart(res_df, "model_name", "latency", "⏱️ Latency (s)", higher_is_better=False),
+                        use_container_width=True
+                    )
                     
                 with col2:
-                    st.markdown("### 🎯 Groundedness (1-10)")
-                    st.bar_chart(res_df.set_index("model_name")["groundedness_score"])
+                    st.altair_chart(
+                        create_colored_bar_chart(res_df, "model_name", "groundedness_score", "🎯 Groundedness", higher_is_better=True),
+                        use_container_width=True
+                    )
+                    
+                # Style function for text color
+                def style_text_color(df):
+                    styles = pd.DataFrame('', index=df.index, columns=df.columns)
+                    max_score = df['groundedness_score'].max()
+                    min_score = df['groundedness_score'].min()
+                    min_lat = df['latency'].min()
+                    max_lat = df['latency'].max()
+                    
+                    for idx, row in df.iterrows():
+                        if row['groundedness_score'] == max_score:
+                            styles.at[idx, 'groundedness_score'] = 'color: #2e7d32; font-weight: bold'
+                        elif row['groundedness_score'] == min_score:
+                            styles.at[idx, 'groundedness_score'] = 'color: #c62828'
+                            
+                        if row['latency'] == min_lat:
+                            styles.at[idx, 'latency'] = 'color: #2e7d32; font-weight: bold'
+                        elif row['latency'] == max_lat:
+                            styles.at[idx, 'latency'] = 'color: #c62828'
+                    return styles
+
+                st.dataframe(
+                    res_df[["model_name", "latency", "groundedness_score", "explanation"]].style.apply(style_text_color, axis=None),
+                    use_container_width=True
+                )
                 
                 with st.expander("View Detailed Responses & Context"):
                     st.markdown("### Ground Truth Context")
@@ -217,12 +263,32 @@ def main():
                         
         elif mode == "Batch Evaluation (CSV)":
             csv_path = "meal_mind_streamlit/Meal_Mind_Combined_2025-12-06-1503.csv"
+            output_path = "meal_mind_streamlit/evaluation_results.csv"
+            
             try:
                 df = pd.read_csv(csv_path)
                 st.success(f"Loaded {len(df)} food items from CSV.")
                 st.dataframe(df.head(), use_container_width=True)
                 
-                if st.button("🚀 Run Batch Evaluation", type="primary"):
+                col1, col2 = st.columns([1, 1])
+                
+                run_new = False
+                load_existing = False
+                
+                with col1:
+                    if st.button("🚀 Run Batch Evaluation", type="primary"):
+                        run_new = True
+                        
+                with col2:
+                    if os.path.exists(output_path):
+                        if st.button("📂 Load Previous Results"):
+                            load_existing = True
+                    else:
+                        st.info("No previous results found.")
+                
+                res_df = None
+                
+                if run_new:
                     from utils.model_arena import ModelArena
                     from utils.db import get_snowpark_session
                     
@@ -236,9 +302,16 @@ def main():
                     res_df = pd.DataFrame(results)
                     
                     # Save to CSV
-                    output_path = "meal_mind_streamlit/evaluation_results.csv"
                     res_df.to_csv(output_path, index=False)
                     st.success(f"Results saved to `{output_path}`")
+                    
+                elif load_existing:
+                    res_df = pd.read_csv(output_path)
+                    st.success(f"Loaded results from `{output_path}`")
+                    
+                # Visualization (Common for both)
+                if res_df is not None:
+                    import altair as alt
                     
                     # Aggregate Metrics
                     st.subheader("📊 Aggregate Performance")
@@ -254,28 +327,88 @@ def main():
                         "token_ratio": "mean"
                     }).reset_index()
                     
+                    # Helper for Altair Charts
+                    def create_colored_bar_chart(data, x_col, y_col, title, higher_is_better=True):
+                        # Determine domain for color scale
+                        min_val = data[y_col].min()
+                        max_val = data[y_col].max()
+                        
+                        # For color scheme: 
+                        # If higher is better (Score): Low(Red) -> High(Green)
+                        # If lower is better (Latency): Low(Green) -> High(Red)
+                        
+                        if higher_is_better:
+                            # Red to Green
+                            domain = [min_val, max_val]
+                            range_ = ['#d32f2f', '#388e3c'] # Red to Green
+                        else:
+                            # Green to Red (Low latency is green)
+                            domain = [min_val, max_val]
+                            range_ = ['#388e3c', '#d32f2f'] # Green to Red
+                            
+                        chart = alt.Chart(data).mark_bar().encode(
+                            x=alt.X(x_col, axis=alt.Axis(labelAngle=0)),
+                            y=alt.Y(y_col, title=title),
+                            color=alt.Color(y_col, scale=alt.Scale(domain=domain, range=range_), legend=None),
+                            tooltip=[x_col, y_col]
+                        ).properties(
+                            title=title
+                        )
+                        return chart
+
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.markdown("### ⏱️ Avg Latency (s)")
-                        st.bar_chart(agg_metrics.set_index("model_name")["latency"])
+                        st.altair_chart(
+                            create_colored_bar_chart(agg_metrics, "model_name", "latency", "⏱️ Avg Latency (s)", higher_is_better=False),
+                            use_container_width=True
+                        )
                         
                     with col2:
-                        st.markdown("### 🎯 Avg Groundedness (1-10)")
-                        st.bar_chart(agg_metrics.set_index("model_name")["groundedness_score"])
+                        st.altair_chart(
+                            create_colored_bar_chart(agg_metrics, "model_name", "groundedness_score", "🎯 Avg Groundedness", higher_is_better=True),
+                            use_container_width=True
+                        )
                         
                     col3, col4 = st.columns(2)
                     with col3:
-                        st.markdown("### 🔢 Avg Output Tokens")
                         st.bar_chart(agg_metrics.set_index("model_name")["output_tokens"])
                         
                     with col4:
-                        st.markdown("### ⚖️ Avg Token Ratio (Out/In)")
                         st.bar_chart(agg_metrics.set_index("model_name")["token_ratio"])
                         
                     # Detailed Table
                     st.subheader("📝 Detailed Results")
+                    
+                    # Style function for text color
+                    def style_text_color(df):
+                        # Create a DataFrame of CSS strings
+                        styles = pd.DataFrame('', index=df.index, columns=df.columns)
+                        
+                        # Groundedness: High=Green
+                        max_score = df['groundedness_score'].max()
+                        min_score = df['groundedness_score'].min()
+                        
+                        # Latency: Low=Green
+                        min_lat = df['latency'].min()
+                        max_lat = df['latency'].max()
+                        
+                        for idx, row in df.iterrows():
+                            # Score
+                            if row['groundedness_score'] == max_score:
+                                styles.at[idx, 'groundedness_score'] = 'color: #2e7d32; font-weight: bold' # Green
+                            elif row['groundedness_score'] == min_score:
+                                styles.at[idx, 'groundedness_score'] = 'color: #c62828' # Red
+                                
+                            # Latency
+                            if row['latency'] == min_lat:
+                                styles.at[idx, 'latency'] = 'color: #2e7d32; font-weight: bold' # Green
+                            elif row['latency'] == max_lat:
+                                styles.at[idx, 'latency'] = 'color: #c62828' # Red
+                                
+                        return styles
+
                     st.dataframe(
-                        res_df[["food_name", "model_name", "groundedness_score", "latency", "input_tokens", "output_tokens", "token_ratio", "citation_count", "explanation"]],
+                        res_df[["food_name", "model_name", "groundedness_score", "latency", "input_tokens", "output_tokens", "token_ratio", "citation_count", "explanation"]].style.apply(style_text_color, axis=None),
                         use_container_width=True
                     )
                     

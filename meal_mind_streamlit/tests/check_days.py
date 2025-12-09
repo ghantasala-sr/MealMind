@@ -3,7 +3,8 @@ import sys
 from dotenv import load_dotenv
 
 # Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.db import get_snowflake_connection
 

@@ -1,21 +1,10 @@
-model_name,model_id,latency,response,groundedness_score,explanation,input_tokens,output_tokens,citations,citation_count,food_name,prompt,ground_truth_context
-Meta (Llama 3.1 70B),llama3.1-70b,6.55,"A very specific question!
+model_name,model_id,latency,response,groundedness_score,explanation,citations,citation_count,input_tokens,output_tokens,food_name,prompt,ground_truth_context
+Meta (Llama 3.1 70B),llama3.1-70b,3.26,"Based on the provided information, here are the exact values for 100g of sauce tomato chili sauce bottled with salt:
 
-According to the United States Department of Agriculture (USDA) database, here are the exact values for 100g of bottled tomato chili sauce with salt:
-
-**Nutrition Facts (per 100g serving)**
-
-* **Protein**: 1.2g
-* **Calories**: 53 kcal
-* **Carbohydrates**: 12.2g
-	+ Sugars: 9.3g
-* **Fat**: 0.2g
-	+ Saturated fat: 0.0g
-* **Sodium**: 250mg (10% of the Daily Value (DV))
-
-Please note that these values may vary slightly depending on the specific brand and type of tomato chili sauce you are using. However, these values should be a good approximation.
-
-Source: USDA Database for the Oxygen Radical Absorbance Capacity (ORAC) of Selected Foods, Release 2 (2010) - Tomato sauce, bottled, with salt.",2,"The response provides nutritional values that significantly contradict the context. The context states 92 kcal, 2.5g protein, 19.79g carbs, 13.33g sugars, and 1338mg sodium per 100g, while the response claims 53 kcal, 1.2g protein, 12.2g carbs, 9.3g sugars, and 250mg sodium. Nearly all values are substantially different. The response also incorrectly claims to cite USDA data when it doesn't match the provided context. Only minimal credit given for addressing the same food item and using the same serving size format.",0,0,[],0,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
+* Protein: 2.5g
+* Calories: 92 kcal
+* Carbs: 19.79g
+* Fat: 0.23g",10,"The answer is fully supported by the context. All four nutritional values provided (Protein: 2.5g, Calories: 92 kcal, Carbs: 19.79g, Fat: 0.23g) are accurately extracted from the context and correctly represent the values for 100g serving size. The answer is precise, factually correct, and directly corresponds to the information given in the context.",[],1,337,59,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
 Serving Size: 100g
 Calories: 92 kcal
 Protein: 2.5 g
@@ -25,48 +14,11 @@ Fiber: 2.4 g
 Sugars: 13.33 g
 Sodium: 1338 mg
 "
-Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,2.41,"For 100g of bottled tomato chili sauce with salt:
-
-Calories: 112 kcal
-Protein: 1.7g
-Carbohydrates: 26.3g
-Fat: 0.7g
-
-These values are approximate as there can be slight variations between different brands and recipes.",2,"The response provides nutritional values that significantly differ from the context without acknowledging the discrepancy. Context shows 92 kcal vs response's 112 kcal, 2.5g protein vs 1.7g, 19.79g carbs vs 26.3g, and 0.23g fat vs 0.7g. While the response correctly identifies the food item and serving size, the actual nutritional values are not grounded in the provided context. The disclaimer about brand variations doesn't justify presenting completely different numbers when specific context data is available.",0,0,[],0,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
-Serving Size: 100g
-Calories: 92 kcal
-Protein: 2.5 g
-Carbohydrates: 19.79 g
-Total Fat: 0.23 g
-Fiber: 2.4 g
-Sugars: 13.33 g
-Sodium: 1338 mg
-"
-Mistral (Large 2),mistral-large2,4.55," The nutritional content of bottled tomato chili sauce can vary depending on the brand and specific recipe. However, I can provide you with a general estimate based on typical nutritional values for such products. Here is an approximate breakdown for 100 grams of bottled tomato chili sauce with salt:
-
-- **Calories:** Approximately 50-60 kcal
-- **Protein:** Approximately 1-2 grams
-- **Carbohydrates:** Approximately 10-12 grams
-- **Fat:** Approximately 0-1 gram
-
-For the most accurate information, it is best to check the nutrition label on the specific product you are using, as different brands may have slightly different formulations.",3,"The response provides generic nutritional estimates that significantly differ from the specific data given in the context. The context shows 92 kcal (not 50-60), 2.5g protein (within range but imprecise), and 19.79g carbohydrates (not 10-12g). The response ignores specific values for fiber, sugars, and sodium that were provided in the context. While the response acknowledges variability between brands, it fails to use or reference the actual data provided, making it poorly grounded in the given context.",0,0,[],0,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
-Serving Size: 100g
-Calories: 92 kcal
-Protein: 2.5 g
-Carbohydrates: 19.79 g
-Total Fat: 0.23 g
-Fiber: 2.4 g
-Sugars: 13.33 g
-Sodium: 1338 mg
-"
-Snowflake (Arctic),snowflake-arctic,1.49," The nutritional information for 100g of sauce tomato chili sauce bottled with salt is as follows:
-
+Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,2.91,"According to the context information, in 100g of sauce tomato chili sauce bottled with salt:
+- Calories: 92 kcal
 - Protein: 2.5g
-- Calories: 77 kcal
-- Carbohydrates: 17.5g
-- Fat: 0.3g
-
-Note that this information may vary depending on the specific brand and recipe used. It's always a good idea to check the nutrition label on the product for the most accurate information.",3,"The response contains significant inaccuracies when compared to the context. While it correctly states the protein content (2.5g), it provides wrong values for calories (77 vs 92 kcal), carbohydrates (17.5g vs 19.79g), and fat (0.3g vs 0.23g). Additionally, it omits important nutritional information present in the context such as fiber, sugars, and sodium content. The disclaimer about variation by brand is reasonable but doesn't excuse the incorrect data provided.",0,0,[],0,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
+- Carbs: 19.79g
+- Fat: 0.23g",10,"The answer is fully supported by the context. All four nutritional values provided (calories, protein, carbohydrates, and fat) match exactly with the information given in the context for 100g of sauce tomato chili sauce bottled with salt. The answer is accurate, concise, and directly addresses the nutritional information available.",[],1,396,66,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
 Serving Size: 100g
 Calories: 92 kcal
 Protein: 2.5 g
@@ -76,19 +28,12 @@ Fiber: 2.4 g
 Sugars: 13.33 g
 Sodium: 1338 mg
 "
-OpenAI (GPT 4.1),openai-gpt-4.1,2.42,"Here are the **approximate nutritional values per 100g** for **bottled tomato chili sauce with salt** (values may vary slightly by brand, but these are standard database values such as from the USDA):
+Mistral (Large 2),mistral-large2,2.38," Based on the provided context:
 
-- **Calories:** 92 kcal  
-- **Protein:** 1.8 g  
-- **Carbohydrates:** 22.2 g  
-  - **Sugars:** 19.0 g  
-- **Fat:** 0.3 g  
-  - **Saturated fat:** 0.0 g  
-- **Sodium:** 1,200 mg  
-
-**Source:** [USDA FoodData Central, ""Tomato chili sauce, bottled, with salt""](https://fdc.nal.usda.gov/fdc-app.html#/food-details/170002/nutrients)
-
-If you need values for a specific brand or homemade version, please specify!",6,"The response provides nutritional information for the same food item, but several values differ from the context. Calories match exactly (92 kcal), and sodium is close (1,200 vs 1,338 mg). However, protein (1.8g vs 2.5g), carbohydrates (22.2g vs 19.79g), sugars (19.0g vs 13.33g), and fat (0.3g vs 0.23g) show notable discrepancies. The response acknowledges values may vary by brand and cites USDA as a source, which provides some grounding, but the specific values given don't match the context provided. The response is partially grounded but contains significant deviations from the reference data.",0,0,[],0,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
+- Calories: 92 kcal
+- Protein: 2.5g
+- Carbs: 19.79g
+- Fat: 0.23g",10,"The answer is completely accurate and directly supported by the context. All four nutritional values provided (calories, protein, carbs, and fat) exactly match the information given in the context for the 100g serving size of tomato chili sauce. The answer presents the key macronutrients in a clear, concise format without adding any unsupported information.",[],1,414,50,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
 Serving Size: 100g
 Calories: 92 kcal
 Protein: 2.5 g
@@ -98,56 +43,46 @@ Fiber: 2.4 g
 Sugars: 13.33 g
 Sodium: 1338 mg
 "
-Meta (Llama 3.1 70B),llama3.1-70b,16.07,"A tasty dish! Unfortunately, I need to clarify that the exact values depend on the specific ingredients and their proportions used in the beef and rice with mushroom sauce. However, I can provide you with approximate values based on average data.
+Snowflake (Arctic),snowflake-arctic,1.32," Based on the given context information, here are the macronutrient values for 100g of sauce tomato chili sauce bottled with salt:
 
-Here's a breakdown of the nutritional values for 100g of beef and rice with mushroom sauce:
+Protein: 2.5g
+Calories: 92 kcal
+Carbs: 19.79g
+Fat: 0.23g
 
-**Assumptions:**
+These values are directly taken from the context information provided for sauce tomato chili sauce bottled with salt.",10,"The answer is perfectly supported by the context. It accurately extracts and reports the macronutrient values (protein: 2.5g, calories: 92 kcal, carbs: 19.79g, fat: 0.23g) exactly as they appear in the provided nutritional information for the 100g serving size of sauce tomato chili sauce bottled with salt. The answer correctly identifies the food item and serving size, and all numerical values match the context precisely.",[],1,433,105,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
+Serving Size: 100g
+Calories: 92 kcal
+Protein: 2.5 g
+Carbohydrates: 19.79 g
+Total Fat: 0.23 g
+Fiber: 2.4 g
+Sugars: 13.33 g
+Sodium: 1338 mg
+"
+OpenAI (GPT 4.1),openai-gpt-4.1,1.24,"For 100g of sauce tomato chili sauce bottled with salt, the exact values are:
 
-* Beef: 50g of cooked beef (lean cut, e.g., sirloin or ribeye)
-* Rice: 30g of cooked white rice
-* Mushroom sauce: 20g of a basic mushroom sauce made with butter, flour, mushrooms, and beef broth
+- Calories: 92 kcal  
+- Protein: 2.5g  
+- Carbs: 19.79g  
+- Fat: 0.23g",10,"The answer is completely accurate and directly supported by the context. All four nutritional values provided (Calories: 92 kcal, Protein: 2.5g, Carbs: 19.79g, Fat: 0.23g) exactly match the information given in the context for 100g of sauce tomato chili sauce bottled with salt. The answer is concise, well-formatted, and contains no errors or unsupported claims.",[],1,335,53,sauce tomato chili sauce bottled with salt,"How much protein, calories, carbs, and fat is in 100g of sauce tomato chili sauce bottled with salt? Please provide the exact values.","Food Item: sauce tomato chili sauce bottled with salt
+Serving Size: 100g
+Calories: 92 kcal
+Protein: 2.5 g
+Carbohydrates: 19.79 g
+Total Fat: 0.23 g
+Fiber: 2.4 g
+Sugars: 13.33 g
+Sodium: 1338 mg
+"
+Meta (Llama 3.1 70B),llama3.1-70b,3.07,"Based on the context information, the nutritional values for ""beef and rice with mushroom sauce"" are:
 
-**Nutritional values per 100g:**
+* Calories: 135 kcal
+* Protein: 6.25g
+* Carbs: 15.53g
+* Fat: 4.76g
 
-* **Protein:** 23.5g
-	+ Beef: 18.5g (37% of the Daily Value (DV))
-	+ Rice: 2.5g (5% of the DV)
-	+ Mushroom sauce: 2.5g (5% of the DV)
-* **Calories:** 240 kcal
-	+ Beef: 120 kcal (6% of the DV)
-	+ Rice: 110 kcal (6% of the DV)
-	+ Mushroom sauce: 10 kcal (0.5% of the DV)
-* **Carbohydrates:** 25.5g
-	+ Rice: 20g (7% of the DV)
-	+ Mushroom sauce: 3g (1% of the DV)
-	+ Beef: 2.5g (1% of the DV)
-* **Fat:** 10.5g
-	+ Beef: 3.5g (5% of the DV)
-	+ Mushroom sauce: 4g (6% of the DV)
-	+ Rice: 3g (5% of the DV)
-
-**Note:** These values are approximate and may vary based on specific ingredients, cooking methods, and portion sizes.
-
-To give you a better idea, here are the exact values for each component:
-
-* 50g cooked beef (lean cut):
-	+ Protein: 18.5g
-	+ Calories: 120 kcal
-	+ Carbohydrates: 0g
-	+ Fat: 3.5g
-* 30g cooked white rice:
-	+ Protein: 2.5g
-	+ Calories: 110 kcal
-	+ Carbohydrates: 25g
-	+ Fat: 0.5g
-* 20g mushroom sauce (basic recipe):
-	+ Protein: 2.5g
-	+ Calories: 100 kcal
-	+ Carbohydrates: 10g
-	+ Fat: 8g
-
-Please keep in mind that these values are estimates and may vary based on specific ingredients and cooking methods.",2,"The response provides significantly different nutritional values than those stated in the context. For example, the context states 135 kcal per 100g while the response claims 240 kcal; the context shows 6.25g protein while the response claims 23.5g; the context indicates 4.76g fat while the response states 10.5g. The response also makes assumptions about ingredient proportions (50g beef, 30g rice, 20g sauce) that are not supported by the context. While the response acknowledges these are estimates, the values are so divergent from the provided context that it fails to be grounded in the given information. The only reason it scores above 1 is that it correctly identifies the food item being discussed.",0,0,[],0,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
+These values are for 100g of the food, so no conversion is needed.",10,"The answer is fully supported by the context. It accurately extracts and presents the four main nutritional values (calories, protein, carbohydrates, and fat) exactly as stated in the context. The answer correctly identifies the serving size as 100g and appropriately notes that no conversion is needed. All numerical values match the context precisely, and the information is presented clearly and concisely.",[],1,355,74,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
 Serving Size: 100g
 Calories: 135 kcal
 Protein: 6.25 g
@@ -157,19 +92,13 @@ Fiber: 0.4 g
 Sugars: 0.59 g
 Sodium: 313 mg
 "
-Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,6.31,"The exact nutritional values can vary based on the specific cuts of beef, type of rice, and sauce preparation. Without knowing these details and the exact proportions of each ingredient in the 100g serving, I cannot provide precise values. However, I can provide a rough estimate:
+Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,3.49,"According to the context information, beef and rice with mushroom sauce contains:
+- Calories: 135 kcal
+- Protein: 6.25g
+- Carbs: 15.53g
+- Fat: 4.76g
 
-For a typical beef and rice with mushroom sauce (100g total):
-- Calories: ~200-250 kcal
-- Protein: ~15-20g
-- Carbohydrates: ~20-25g
-- Fat: ~8-12g
-
-These are approximate values. For exact numbers, you would need to specify:
-1. The cut of beef used
-2. Type of rice
-3. Mushroom sauce recipe
-4. Exact proportions of each component",2,"The response is poorly grounded in the context. The context provides specific, precise nutritional values (135 kcal, 6.25g protein, 15.53g carbs, 4.76g fat), but the response ignores this data entirely and instead provides estimated ranges that are significantly different and much higher (200-250 kcal, 15-20g protein, 20-25g carbs, 8-12g fat). The response treats the question as if no data exists, when detailed nutritional information is clearly provided in the context. A well-grounded response would have simply cited the values from the context.",0,0,[],0,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
+These are the exact values provided in the context for 100g of beef and rice with mushroom sauce.",10,"The answer is fully supported by the context. It accurately extracts and presents the four main nutritional values (calories, protein, carbohydrates, and fat) for beef and rice with mushroom sauce per 100g serving. All numerical values match exactly with those provided in the context, and the answer correctly identifies the food item and serving size. The answer is concise, accurate, and directly addresses the nutritional information from the given context.",[],1,408,82,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
 Serving Size: 100g
 Calories: 135 kcal
 Protein: 6.25 g
@@ -179,44 +108,12 @@ Fiber: 0.4 g
 Sugars: 0.59 g
 Sodium: 313 mg
 "
-Mistral (Large 2),mistral-large2,10.38," To provide the exact nutritional values for 100g of beef and rice with mushroom sauce, I'll need to make some assumptions about the recipe and ingredients used. Here's a breakdown based on common ingredients and proportions:
+Mistral (Large 2),mistral-large2,2.24," Based on the provided context, 100g of beef and rice with mushroom sauce contains:
 
-- Beef (cooked, lean): 50g
-- Rice (cooked, white, long-grain): 40g
-- Mushroom sauce: 10g (made with 8g mushrooms, 1g butter, and 1g flour)
-
-Using the USDA FoodData Central, here are the approximate nutritional values for this combination:
-
-1. Protein:
-   - Beef: 15.6g
-   - Rice: 2.9g
-   - Mushrooms: 0.7g
-   - Total: 19.2g
-
-2. Calories:
-   - Beef: 116 kcal
-   - Rice: 64 kcal
-   - Mushrooms: 4 kcal
-   - Butter: 7 kcal
-   - Flour: 4 kcal
-   - Total: 195 kcal
-
-3. Carbohydrates:
-   - Beef: 0g
-   - Rice: 14.2g
-   - Mushrooms: 0.5g
-   - Flour: 0.7g
-   - Total: 15.4g
-
-4. Fat:
-   - Beef: 5.4g
-   - Rice: 0.3g
-   - Mushrooms: 0.1g
-   - Butter: 0.8g
-   - Flour: 0g
-   - Total: 6.6g
-
-These values are approximate and can vary based on the specific ingredients, cooking methods, and exact proportions used in the dish.",2,"The response is poorly grounded in the context. While the context provides specific nutritional values for the dish (135 kcal, 6.25g protein, 15.53g carbs, 4.76g fat), the response ignores these values entirely and instead provides different calculations (195 kcal, 19.2g protein, 15.4g carbs, 6.6g fat). The response makes unnecessary assumptions about ingredient proportions and calculates from scratch using USDA data, when the context already contains the definitive nutritional information. The only slight alignment is in carbohydrates (15.4g vs 15.53g), but all other values significantly differ from the context.",0,0,[],0,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
+- Calories: 135 kcal
+- Protein: 6.25g
+- Carbs: 15.53g
+- Fat: 4.76g",10,"The answer is completely accurate and directly supported by the context. All four nutritional values provided (calories, protein, carbs, and fat) exactly match the information given in the context for 100g of beef and rice with mushroom sauce. The answer presents the key nutritional information in a clear, concise format without adding any unsupported claims or incorrect data.",[],1,440,67,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
 Serving Size: 100g
 Calories: 135 kcal
 Protein: 6.25 g
@@ -226,29 +123,23 @@ Fiber: 0.4 g
 Sugars: 0.59 g
 Sodium: 313 mg
 "
-Snowflake (Arctic),snowflake-arctic,2.69," The nutritional content of 100g of beef and rice with mushroom sauce can vary depending on the recipe and the specific ingredients used. Here is a general breakdown of the macronutrient content of these foods:
+Snowflake (Arctic),snowflake-arctic,3.35," Based on the context information provided, the beef and rice with mushroom sauce contains the following nutritional values per serving:
 
-Protein:
-- Beef (cooked, lean only): 25g
-- Rice (cooked, white): 2.7g
-- Mushroom sauce (made with milk and butter): 2.5g
+- Calories: 135 kcal
+- Protein: 6.25g
+- Carbs: 15.53g
+- Fat: 4.76g
+- Fiber: 0.4g
 
-Calories:
-- Beef (cooked, lean only): 143
-- Rice (cooked, white): 130
-- Mushroom sauce (made with milk and butter): 110
+To calculate the nutritional values for 100g of the dish, we can set up proportions:
 
-Carbohydrates:
-- Beef (cooked, lean only): 0g
-- Rice (cooked, white): 28g
-- Mushroom sauce (made with milk and butter): 7g
+- Calories: (135 kcal / serving) * (100g / 1 serving) = 135 kcal/serving * 100g = 135 kcal
+- Protein: (6.25g / serving) * (100g / 1 serving) = 6.25g/serving * 100g = 62.5g
+- Carbs: (15.53g / serving) * (100g / 1 serving) = 15.53g/serving * 100g = 155.3g
+- Fat: (4.76g / serving) * (100g / 1 serving) = 4.76g/serving * 100g = 47.6g
+- Fiber: (0.4g / serving) * (100g / 1 serving) = 0.4g/serving * 100g = 4g
 
-Fat:
-- Beef (cooked, lean only): 5g
-- Rice (cooked, white): 0.3g
-- Mushroom sauce (made with milk and butter): 11g
-
-Note that these values are approximate and may vary depending on the specific recipe and ingredients used.",2,"The response is poorly grounded in the context. Instead of using the specific nutritional values provided in the context for 'beef and rice with mushroom sauce' (135 kcal, 6.25g protein, 15.53g carbs, 4.76g fat per 100g), the response breaks down individual ingredients separately with completely different values (e.g., beef alone at 143 kcal and 25g protein). The response ignores the actual data given and provides generic nutritional information for separate ingredients rather than the combined dish specified in the context.",0,0,[],0,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
+Therefore, 100g of beef and rice with mushroom sauce contains approximately 135 kcal, 62.5g of protein, 155.3g of carbs, 47.6g of fat, and 4g of fiber.",1,"The answer contains a critical mathematical error that makes it completely incorrect. The context explicitly states that the serving size IS 100g, meaning all the nutritional values listed are already per 100g. The answer incorrectly attempts to calculate '100g values' by multiplying each nutrient by 100, resulting in absurd and impossible values (e.g., 62.5g protein, 155.3g carbs, 47.6g fat in 100g of food - which would total over 265g of macronutrients alone in just 100g of food). The correct answer should have simply restated the values as given in the context, since they already represent 100g portions. This fundamental misunderstanding of the data makes the answer not only unsupported by the context but contradictory to it.",[],1,473,418,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
 Serving Size: 100g
 Calories: 135 kcal
 Protein: 6.25 g
@@ -258,61 +149,12 @@ Fiber: 0.4 g
 Sugars: 0.59 g
 Sodium: 313 mg
 "
-OpenAI (GPT 4.1),openai-gpt-4.1,4.62,"To provide **exact values** for the nutrition in **100g of beef and rice with mushroom sauce**, we need to make some assumptions about the recipe, as there is no universal standard. Here’s a typical breakdown based on a common homemade recipe:
+OpenAI (GPT 4.1),openai-gpt-4.1,0.99,"For 100g of beef and rice with mushroom sauce, the nutritional values are:
 
-### Assumed Recipe (per 100g):
-- **Beef (lean, cooked):** 40g
-- **Cooked white rice:** 40g
-- **Mushroom sauce (mushrooms, cream, flour, butter):** 20g
-
----
-
-## Nutritional Values (per 100g serving):
-
-| Nutrient   | Amount (per 100g) |
-|------------|------------------|
-| **Calories**   | ~130 kcal         |
-| **Protein**    | ~7.0 g            |
-| **Carbohydrates** | ~13.5 g           |
-| **Fat**        | ~4.5 g            |
-
----
-
-### **Breakdown:**
-
-#### **Beef (lean, cooked, 40g)**
-- Calories: ~80 kcal
-- Protein: ~8.5 g
-- Carbs: 0 g
-- Fat: ~4.5 g
-
-#### **Cooked White Rice (40g)**
-- Calories: ~52 kcal
-- Protein: ~1.0 g
-- Carbs: ~11.5 g
-- Fat: ~0.1 g
-
-#### **Mushroom Sauce (20g)**
-- Calories: ~18 kcal
-- Protein: ~0.5 g
-- Carbs: ~2.0 g
-- Fat: ~0.5 g
-
----
-
-### **Total (rounded):**
-- **Calories:** 130 kcal
-- **Protein:** 7.0 g
-- **Carbohydrates:** 13.5 g
-- **Fat:** 4.5 g
-
----
-
-**Note:**  
-- These values are estimates based on typical ingredients and proportions.  
-- Exact values will vary depending on the cut of beef, type of rice, and the specific mushroom sauce recipe (e.g., cream content, butter, flour, etc.).
-
-If you have a specific recipe or brand, please provide details for more precise values!",7,"The response provides nutritional values that are reasonably close to the context data (130 vs 135 kcal, 7.0g vs 6.25g protein, 13.5g vs 15.53g carbs, 4.5g vs 4.76g fat). However, the response claims these are 'assumptions' and 'estimates' when exact values were already provided in the context. The response also adds unnecessary speculation about recipe composition and ingredient breakdowns that weren't requested. While the core nutritional information aligns well with the context, the framing as hypothetical estimates rather than using the provided data reduces groundedness.",0,0,[],0,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
+- **Calories:** 135 kcal  
+- **Protein:** 6.25g  
+- **Carbs:** 15.53g  
+- **Fat:** 4.76g",10,"The answer is completely accurate and directly supported by the context. All four nutritional values provided (calories, protein, carbs, and fat) exactly match the information given in the context for 100g of beef and rice with mushroom sauce. The answer presents the key macronutrients in a clear, concise format without adding any unsupported information.",[],1,351,56,beef and rice with mushroom sauce,"How much protein, calories, carbs, and fat is in 100g of beef and rice with mushroom sauce? Please provide the exact values.","Food Item: beef and rice with mushroom sauce
 Serving Size: 100g
 Calories: 135 kcal
 Protein: 6.25 g
@@ -322,23 +164,11 @@ Fiber: 0.4 g
 Sugars: 0.59 g
 Sodium: 313 mg
 "
-Meta (Llama 3.1 70B),llama3.1-70b,7.55,"According to the United States Department of Agriculture (USDA), here are the exact values for 100g of Greek strawberry low-fat yogurt:
-
-* Protein: 10.2 grams
-* Calories: 97 kcal
-* Carbohydrates: 7.8 grams
-* Fat: 0.4 grams
-
-Please note that these values may vary slightly depending on the specific brand and type of yogurt you are consuming. However, these values are generally representative of a typical Greek strawberry low-fat yogurt.
-
-Here is the breakdown of the macronutrients in more detail:
-
-* Protein: 10.2g (casein, whey protein, and other proteins)
-* Calories: 97 kcal (from protein, carbohydrates, and fat)
-* Carbohydrates: 7.8g (sugars: 7.4g, fiber: 0.4g)
-* Fat: 0.4g (saturated fat: 0.2g, monounsaturated fat: 0.1g, polyunsaturated fat: 0.1g)
-
-Keep in mind that these values are for a 100g serving size, which is approximately 3.5 ounces or about 1/2 cup of yogurt.",2,"The response provides significantly different nutritional values than those in the context. For example, the response claims protein is 10.2g while the context states 8.17g; calories are listed as 97 kcal vs 105 kcal in context; carbohydrates as 7.8g vs 12.29g; and fat as 0.4g vs 2.36g in context. The response also claims these are 'exact values' from USDA, which contradicts the context data. Only the serving size (100g) matches. The response is largely ungrounded in the provided context.",0,0,[],0,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
+Meta (Llama 3.1 70B),llama3.1-70b,2.12,"Based on the context information, for yogurt greek strawberry lowfat, the nutrition information per 100g is: 
+- Protein: 8.17g
+- Calories: 105 kcal
+- Carbs: 12.29g
+- Fat: 2.36g",10,"The answer is fully accurate and directly supported by the context. All four nutritional values provided (Protein: 8.17g, Calories: 105 kcal, Carbs: 12.29g, Fat: 2.36g) exactly match the information given in the context for yogurt greek strawberry lowfat per 100g serving. The answer presents a clear subset of the available nutritional information without any errors or unsupported claims.",[],1,348,59,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
 Serving Size: 100g
 Calories: 105 kcal
 Protein: 8.17 g
@@ -348,14 +178,11 @@ Fiber: 1.0 g
 Sugars: 11.23 g
 Sodium: 33 mg
 "
-Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,3.27,"For 100g of lowfat strawberry Greek yogurt, the typical nutritional values are approximately:
-
-Calories: 83 calories
-Protein: 9.0g
-Carbohydrates: 9.0g
-Fat: 2.0g
-
-Please note that these values can vary slightly depending on the brand and specific product. If you need values for a specific brand, it would be best to check that product's nutrition label directly.",3,"The response provides nutritional information that significantly differs from the context. The context shows 105 kcal but the response states 83 calories; context shows 8.17g protein but response states 9.0g; context shows 12.29g carbohydrates but response states 9.0g; context shows 2.36g fat but response states 2.0g. Only the fat content is approximately close. The response also omits important nutritional details present in the context (fiber, sugars, sodium). While the response correctly identifies the food item, the numerical values are largely ungrounded in the provided context.",0,0,[],0,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
+Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,2.34,"According to the context information, 100g of yogurt greek strawberry lowfat contains:
+- Calories: 105 kcal
+- Protein: 8.17g
+- Carbs: 12.29g
+- Fat: 2.36g",10,"The answer is completely accurate and well-supported by the context. It correctly states the serving size (100g) and accurately reports all four nutritional values mentioned: Calories (105 kcal), Protein (8.17g), Carbohydrates (12.29g), and Fat (2.36g). All numbers match the context exactly, and the answer appropriately attributes the information to the context.",[],1,402,64,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
 Serving Size: 100g
 Calories: 105 kcal
 Protein: 8.17 g
@@ -365,14 +192,13 @@ Fiber: 1.0 g
 Sugars: 11.23 g
 Sodium: 33 mg
 "
-Mistral (Large 2),mistral-large2,4.09," The nutritional content of Greek yogurt can vary by brand, but I can provide a general estimate for 100 grams of low-fat strawberry Greek yogurt. Here are the approximate values:
+Mistral (Large 2),mistral-large2,3.64," Based on the context information provided:
 
-- Calories: 110-130 kcal
-- Protein: 10-12 g
-- Carbohydrates: 15-20 g
-- Fat: 2-4 g
-
-For the most accurate information, I recommend checking the nutrition label of the specific brand and flavor of Greek yogurt you have, as the values can differ based on the exact recipe and ingredients used.",4,"The response provides general ranges that partially overlap with the context data, but are often inaccurate. For example, the context shows 8.17g protein but the response claims 10-12g; the context shows 12.29g carbohydrates but the response claims 15-20g. The calorie range (110-130) is close to the actual 105 kcal, and the fat range (2-4g) includes the actual 2.36g. However, the response ignores specific data points available in the context (fiber, sugars, sodium) and provides unnecessarily broad ranges instead of using the precise values given. The response is somewhat grounded but misses the opportunity to provide the exact information available.",0,0,[],0,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
+100g of yogurt greek strawberry lowfat contains:
+- Calories: 105 kcal
+- Protein: 8.17g
+- Carbs: 12.29g
+- Fat: 2.36g",10,"The answer is completely accurate and directly supported by the context. It correctly states all four nutritional values (calories, protein, carbohydrates, and fat) for 100g of yogurt greek strawberry lowfat, with exact matches to the provided data. The answer is clear, concise, and contains no errors or unsupported claims.",[],1,444,71,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
 Serving Size: 100g
 Calories: 105 kcal
 Protein: 8.17 g
@@ -382,14 +208,14 @@ Fiber: 1.0 g
 Sugars: 11.23 g
 Sodium: 33 mg
 "
-Snowflake (Arctic),snowflake-arctic,1.17," A 100g serving of Greek yogurt, strawberry flavor, and low-fat content contains approximately:
+Snowflake (Arctic),snowflake-arctic,1.67," Based on the context information provided, the yogurt greek strawberry lowfat contains the following nutritional values per serving, not 100g:
 
-Protein: 10g
-Calories: 63kcal
-Carbohydrates: 8g
-Fat: 0.5g
+- Calories: 105 kcal
+- Protein: 8.17g
+- Carbs: 12.29g
+- Fat: 2.36g
 
-These values may vary slightly depending on the brand and specific product. It's always a good idea to check the nutrition label for accurate information.",2,"The response provides nutritional information that significantly contradicts the context. The context states 105 kcal, 8.17g protein, 12.29g carbs, and 2.36g fat, while the response claims 63 kcal, 10g protein, 8g carbs, and 0.5g fat. All major values are incorrect and not grounded in the provided context. The only reason for not scoring 1 is that the response is discussing the same food item (Greek strawberry lowfat yogurt).",0,0,[],0,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
+To determine the nutritional values for 100g, we can calculate the percentage of each nutrient per 100g. However, the information provided does not specify the serving size in grams. Thus, we cannot accurately calculate the nutritional values for 100g of the product.",2,"The answer is poorly supported by the context and contains a significant error. The context explicitly states 'Serving Size: 100g' at the beginning, making it clear that all nutritional values listed are already per 100g. However, the answer incorrectly claims 'the information provided does not specify the serving size in grams' and states the values are 'per serving, not 100g.' This directly contradicts the clearly stated information in the context. The answer also unnecessarily suggests calculations are needed when the values are already provided for 100g. The only accurate part is the listing of the four nutritional values themselves.",[],1,457,153,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
 Serving Size: 100g
 Calories: 105 kcal
 Protein: 8.17 g
@@ -399,19 +225,12 @@ Fiber: 1.0 g
 Sugars: 11.23 g
 Sodium: 33 mg
 "
-OpenAI (GPT 4.1),openai-gpt-4.1,2.4,"The nutritional values for **100g of Greek yogurt, strawberry, lowfat** can vary slightly by brand, but here are typical values based on USDA and common commercial products:
+OpenAI (GPT 4.1),openai-gpt-4.1,0.78,"For 100g of yogurt greek strawberry lowfat:
 
-- **Calories:** 85 kcal  
-- **Protein:** 6.5 g  
-- **Carbohydrates:** 12 g  
-  - **Sugars:** 10 g  
-- **Fat:** 1.5 g  
-
-**References:**  
-- [USDA FoodData Central: Greek yogurt, lowfat, fruit, strawberry](https://fdc.nal.usda.gov/fdc-app.html#/food-details/170013/nutrients)  
-- Major brands (e.g., Chobani, FAGE) nutrition labels
-
-If you have a specific brand in mind, please let me know for more precise values!",3,"The response provides nutritional values that differ significantly from the context without acknowledging the specific data provided. The context shows 105 kcal, 8.17g protein, and 2.36g fat, while the response claims 85 kcal, 6.5g protein, and 1.5g fat. The response mentions values 'can vary by brand' but presents alternative numbers as typical rather than using or referencing the actual context data. A well-grounded response should either use the provided context values or explain why they differ from other sources while still acknowledging them.",0,0,[],0,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
+- Calories: 105 kcal
+- Protein: 8.17g
+- Carbs: 12.29g
+- Fat: 2.36g",10,"The answer is completely accurate and directly supported by the context. All four nutritional values provided (calories: 105 kcal, protein: 8.17g, carbs: 12.29g, and fat: 2.36g) exactly match the corresponding values in the context for 100g of yogurt greek strawberry lowfat. The answer presents the most essential nutritional information in a clear, concise format.",[],1,340,46,yogurt greek strawberry lowfat,"How much protein, calories, carbs, and fat is in 100g of yogurt greek strawberry lowfat? Please provide the exact values.","Food Item: yogurt greek strawberry lowfat
 Serving Size: 100g
 Calories: 105 kcal
 Protein: 8.17 g
@@ -421,37 +240,29 @@ Fiber: 1.0 g
 Sugars: 11.23 g
 Sodium: 33 mg
 "
-Meta (Llama 3.1 70B),llama3.1-70b,11.98,"A delicious slice of pizza!
+Meta (Llama 3.1 70B),llama3.1-70b,9.69,"To find the exact values of protein, calories, carbs, and fat in 100g of pizza cheese whole wheat thin crust, we need to look at the corresponding values for that specific food item.
 
-To provide you with the exact values, I'll break down the nutritional information for 100g of pizza cheese on a whole wheat thin crust. Please note that the exact values may vary depending on the specific type of cheese, crust, and cooking method used. However, I'll provide you with approximate values based on average data.
+According to the context information, for pizza cheese whole wheat thin crust:
 
-**Assumptions:**
+* Calories: 267 kcal
+* Protein: 11.77g
+* Carbs: 28.62g
+* Fat: 10.87g
 
-* Whole wheat thin crust: 100g of crust contains approximately 25g of whole wheat flour, 2g of sugar, 2g of salt, and 1g of oil.
-* Pizza cheese: 100g of cheese is a blend of mozzarella, cheddar, and parmesan cheese.
+However, these values are not for 100g, so we need to calculate the values for 100g.
 
-**Nutritional Information (per 100g):**
+To calculate the values for 100g, we need to know the weight of the serving size for pizza cheese whole wheat thin crust. Unfortunately, the context information does not provide this information.
 
-* **Protein:** 24.5g
-	+ Whole wheat crust: 4.5g
-	+ Pizza cheese: 20g
-* **Calories:** 334 kcal
-	+ Whole wheat crust: 120 kcal
-	+ Pizza cheese: 214 kcal
-* **Carbohydrates:** 24.5g
-	+ Whole wheat crust: 20g ( Fiber: 3.5g, Sugars: 2g)
-	+ Pizza cheese: 4.5g (mostly lactose)
-* **Fat:** 17.5g
-	+ Whole wheat crust: 2.5g
-	+ Pizza cheese: 15g (Saturated fat: 9.5g)
+Assuming a standard serving size for pizza is around 250-300g, we can estimate the values for 100g. However, please note that this is an approximation.
 
-**Breakdown of the cheese:**
+For a serving size of 267 kcal, let's assume it's approximately 250g. Then, for 100g, we can calculate the values as follows:
 
-* Mozzarella: 60% of the cheese blend (12g protein, 120 kcal, 6g carbs, 10g fat)
-* Cheddar: 20% of the cheese blend (4g protein, 40 kcal, 1g carbs, 3g fat)
-* Parmesan: 20% of the cheese blend (4g protein, 40 kcal, 1g carbs, 2g fat)
+* Calories: 267 kcal / 250g * 100g ≈ 106.8 kcal
+* Protein: 11.77g / 250g * 100g ≈ 4.71g
+* Carbs: 28.62g / 250g * 100g ≈ 11.45g
+* Fat: 10.87g / 250g * 100g ≈ 4.35g
 
-Please note that these values are approximate and may vary depending on the specific ingredients and cooking methods used.",2,"The response provides significantly different nutritional values than those stated in the context. For example, the context states 267 kcal per 100g while the response claims 334 kcal; the context shows 11.77g protein while the response claims 24.5g; the context indicates 10.87g total fat while the response states 17.5g. The response also includes speculative breakdowns of cheese types and crust composition that are not supported by the context. The only value that closely matches is fiber (3.5g). The response appears to be generating its own estimates rather than using the provided data, making it poorly grounded in the given context.",0,0,[],0,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
+Please note that these values are approximate and may not be exact, as the actual serving size is not provided.",2,"The answer is poorly supported by the context and contains a critical error. The context explicitly states 'Serving Size: 100g' at the beginning, meaning all the nutritional values provided (267 kcal, 11.77g protein, 28.62g carbs, 10.87g fat) are already for 100g. The answer incorrectly claims these values are not for 100g and proceeds to make unnecessary calculations based on an assumed 250g serving size, arriving at incorrect values (106.8 kcal, 4.71g protein, etc.). The correct answer should have simply stated the values as given in the context without any calculations.",[],1,344,334,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
 Serving Size: 100g
 Calories: 267 kcal
 Protein: 11.77 g
@@ -461,26 +272,11 @@ Fiber: 3.5 g
 Sugars: 3.59 g
 Sodium: 543 mg
 "
-Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,5.97,"I cannot provide exact nutritional values for 100g of pizza with cheese on whole wheat thin crust, as these values can vary significantly depending on:
-
-1. The type and amount of cheese used
-2. The specific recipe for the whole wheat crust
-3. The thickness of the crust
-4. Additional toppings or ingredients
-5. Preparation method
-
-For the most accurate values, you should:
-1. Check the nutrition label if it's a store-bought product
-2. Use a specific recipe's nutritional information
-3. Look up the brand-specific information if it's from a restaurant chain
-
-As a rough estimate, 100g of basic cheese pizza with whole wheat crust might contain approximately:
-- Calories: 250-300
-- Protein: 10-12g
-- Carbohydrates: 30-35g
-- Fat: 8-12g
-
-But please note these are estimates and actual values may differ.",3,"The response is poorly grounded in the context. While the context provides specific, detailed nutritional information for the exact food item requested (pizza cheese whole wheat thin crust, 100g), the response claims it 'cannot provide exact nutritional values' and only offers rough estimates. The estimates provided (250-300 calories, 10-12g protein, 30-35g carbs, 8-12g fat) do overlap somewhat with the actual values in the context (267 calories, 11.77g protein, 28.62g carbs, 10.87g fat), but the response fails to use the precise data available. The response also ignores other provided values like fiber, sugars, and sodium entirely.",0,0,[],0,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
+Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,2.29,"According to the context information, pizza cheese whole wheat thin crust contains:
+- Calories: 267 kcal
+- Protein: 11.77g
+- Carbs: 28.62g
+- Fat: 10.87g",10,"The answer is completely accurate and directly supported by the context. It correctly states the calories (267 kcal), protein (11.77g), carbohydrates (28.62g), and fat (10.87g) for pizza cheese whole wheat thin crust per 100g serving. All values match exactly with the nutritional information provided in the context. The answer is concise, well-formatted, and contains no errors or unsupported claims.",[],1,391,59,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
 Serving Size: 100g
 Calories: 267 kcal
 Protein: 11.77 g
@@ -490,14 +286,12 @@ Fiber: 3.5 g
 Sugars: 3.59 g
 Sodium: 543 mg
 "
-Mistral (Large 2),mistral-large2,8.29," To provide the exact nutritional values for 100g of pizza with cheese, whole wheat thin crust, I'll use the USDA's FoodData Central for a close approximation. Please note that the exact values can vary based on the specific brand, recipe, and ingredients used. Here's a breakdown:
+Mistral (Large 2),mistral-large2,2.15," Based on the provided context, for 100g of pizza cheese whole wheat thin crust:
 
-1. **Calories**: Approximately 270 kcal
-2. **Protein**: Approximately 14g
-3. **Carbohydrates**: Approximately 30g
-4. **Fat**: Approximately 10g
-
-These values are estimates based on a typical thin crust whole wheat pizza with cheese. For the most accurate information, it's best to refer to the nutritional information provided by the specific brand or recipe you're using.",7,"The response provides nutritional values that are reasonably close to the context data (calories: 270 vs 267, carbs: 30g vs 28.62g, fat: 10g vs 10.87g). However, the protein value (14g vs 11.77g) shows a notable discrepancy of about 19%. The response also adds unnecessary caveats about USDA data and brand variations when exact context data was already provided. While mostly grounded, the protein discrepancy and failure to use the precise context values reduces the score.",0,0,[],0,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
+- Calories: 267 kcal
+- Protein: 11.77g
+- Carbs: 28.62g
+- Fat: 10.87g",10,"The answer is fully accurate and directly supported by the context. It correctly extracts the calories (267 kcal), protein (11.77g), carbohydrates (28.62g), and fat (10.87g) values for 100g of pizza cheese whole wheat thin crust, matching exactly what is stated in the nutritional information provided. The answer presents the key macronutrients in a clear, concise format without adding any unsupported information.",[],1,427,69,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
 Serving Size: 100g
 Calories: 267 kcal
 Protein: 11.77 g
@@ -507,14 +301,14 @@ Fiber: 3.5 g
 Sugars: 3.59 g
 Sodium: 543 mg
 "
-Snowflake (Arctic),snowflake-arctic,1.69," The nutritional information for 100g of pizza cheese whole wheat thin crust can vary depending on the specific brand and recipe used. However, I can provide you with a general breakdown of the macronutrients typically found in pizza cheese whole wheat thin crust:
+Snowflake (Arctic),snowflake-arctic,2.22," Based on the given context information, we can calculate the amounts of protein, calories, carbs, and fat per 100g of pizza cheese whole wheat thin crust as follows:
 
-- Protein: Approximately 15-20g
-- Calories: Approximately 250-300 calories
-- Carbohydrates: Approximately 25-30g
-- Fat: Approximately 10-15g
+- Calories: (267 kcal / 351.18g) * 100g = 76.08 kcal
+- Protein: (11.77g / 351.18g) * 100g = 3.32g
+- Carbs: (28.62g / 351.18g) * 100g = 8.16g
+- Fat: (10.87g / 351.18g) * 100g = 3.12g
 
-Again, these values may vary depending on the specific product you are using. It's always a good idea to check the nutrition label on the packaging for exact values.",4,"The response provides ranges that partially overlap with the context values (calories: 267 vs 250-300, carbs: 28.62g vs 25-30g, fat: 10.87g vs 10-15g), but significantly overestimates protein (11.77g actual vs 15-20g claimed). More importantly, the response fails to use the specific data provided in the context, instead offering generic ranges and suggesting the user check packaging labels. The response ignores precise values already available (fiber, sugars, sodium) and doesn't acknowledge having specific nutritional data for this exact food item.",0,0,[],0,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
+Therefore, 100g of pizza cheese whole wheat thin crust contains approximately 76.08 kcal, 3.32g of protein, 8.16g of carbs, and 3.12g of fat.",1,"The answer is fundamentally incorrect and contradicts the context. The context clearly states that the nutritional values are already 'per 100g', but the answer performs unnecessary and erroneous calculations by dividing by 351.18g (a figure not mentioned in the context). This results in values that are approximately 1/3.5 of the correct amounts. The correct answer should simply restate the values from the context: 267 kcal, 11.77g protein, 28.62g carbs, and 10.87g fat per 100g. The answer demonstrates a complete misunderstanding of the provided information.",[],1,460,247,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
 Serving Size: 100g
 Calories: 267 kcal
 Protein: 11.77 g
@@ -524,34 +318,12 @@ Fiber: 3.5 g
 Sugars: 3.59 g
 Sodium: 543 mg
 "
-OpenAI (GPT 4.1),openai-gpt-4.1,3.26,"The nutritional values for **100g of pizza with cheese on a whole wheat thin crust** can vary depending on the recipe and brand. However, I can provide **average values** based on standard recipes and nutritional databases.
+OpenAI (GPT 4.1),openai-gpt-4.1,1.16,"For 100g of pizza cheese whole wheat thin crust:
 
-### **Per 100g (average values):**
-
-- **Calories:** 250–280 kcal
-- **Protein:** 11–13 g
-- **Carbohydrates:** 28–32 g
-- **Fat:** 9–11 g
-
-#### **Breakdown (based on USDA and nutrition calculators):**
-
-| Nutrient      | Amount (per 100g) |
-|---------------|-------------------|
-| Calories      | 265 kcal          |
-| Protein       | 12 g              |
-| Carbohydrates | 30 g              |
-| Fat           | 10 g              |
-
-**Note:**  
-- These values are for a typical cheese pizza (mozzarella cheese, tomato sauce) on a whole wheat thin crust.
-- Toppings, cheese amount, and crust thickness can change these values.
-- For exact values, check the nutrition label of the specific product or recipe you are using.
-
-**References:**  
-- [USDA FoodData Central: Pizza, cheese, whole wheat crust](https://fdc.nal.usda.gov/fdc-app.html#/food-details/1104062/nutrients)
-- Generic nutrition calculators
-
-If you have a specific brand or recipe, please provide more details for a more precise answer.",8,"The response is well-grounded in the context. The average values provided (265 kcal, 12g protein, 30g carbs, 10g fat) closely match the context data (267 kcal, 11.77g protein, 28.62g carbs, 10.87g fat). The ranges given (250-280 kcal, 11-13g protein, 28-32g carbs, 9-11g fat) appropriately encompass the context values. However, the response includes additional information like fiber, sugars, and sodium from the context but doesn't explicitly mention these in the main breakdown table, and it adds external references (USDA link) that go beyond the provided context, which slightly reduces perfect groundedness.",0,0,[],0,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
+- Calories: 267 kcal  
+- Protein: 11.77g  
+- Carbs: 28.62g  
+- Fat: 10.87g",10,"The answer is fully accurate and directly supported by the context. All four nutritional values provided (calories: 267 kcal, protein: 11.77g, carbs: 28.62g, and fat: 10.87g) exactly match the information given in the context for 100g of pizza cheese whole wheat thin crust. The answer presents the key macronutrient information in a clear, concise format without adding any unsupported claims or incorrect data.",[],1,342,47,pizza cheese whole wheat thin crust,"How much protein, calories, carbs, and fat is in 100g of pizza cheese whole wheat thin crust? Please provide the exact values.","Food Item: pizza cheese whole wheat thin crust
 Serving Size: 100g
 Calories: 267 kcal
 Protein: 11.77 g
@@ -560,201 +332,4 @@ Total Fat: 10.87 g
 Fiber: 3.5 g
 Sugars: 3.59 g
 Sodium: 543 mg
-"
-Meta (Llama 3.1 70B),llama3.1-70b,4.45,"According to the United States Department of Agriculture (USDA), 100g of pearl barley (which is commonly used in soups) contains:
-
-* Protein: 7.1 grams
-* Calories: 354 kcal
-* Carbohydrates: 77.7 grams
-* Fat: 1.2 grams
-
-Please note that these values are approximate and may vary slightly depending on the specific type of barley and any added ingredients. However, these values are generally accepted as the nutritional content of 100g of pearl barley.
-
-Here is the source of this information:
-
-* United States Department of Agriculture (USDA) - National Nutrient Database for Standard Reference Legacy Release (2018) - Barley, pearled, cooked",1,"The response provides nutritional values that are completely different from those in the context. The context shows soup barley with 58 kcal, 3.34g protein, and 6.66g carbohydrates per 100g, while the response claims pearl barley has 354 kcal, 7.1g protein, and 77.7g carbohydrates. The response appears to describe raw/dry pearl barley rather than the prepared soup barley in the context, and contradicts the provided data entirely. The response is not grounded in the given context.",0,0,[],0,soup barley,"How much protein, calories, carbs, and fat is in 100g of soup barley? Please provide the exact values.","Food Item: soup barley
-Serving Size: 100g
-Calories: 58 kcal
-Protein: 3.34 g
-Carbohydrates: 6.66 g
-Total Fat: 1.79 g
-Fiber: 1.1 g
-Sugars: 0.8 g
-Sodium: 247 mg
-"
-Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,3.23,"For 100g of raw/uncooked pearl barley, the nutritional values are approximately:
-
-- Calories: 352 calories
-- Protein: 9.9g
-- Carbohydrates: 77.7g
-- Fat: 1.2g
-
-Please note that these values may vary slightly depending on the source and variety of barley. Also, when cooked, these values will change due to water absorption.",1,"The response provides nutritional information for raw/uncooked pearl barley, but the context is about soup barley (100g). The values in the response (352 cal, 9.9g protein, 77.7g carbs, 1.2g fat) are completely different from the context values (58 kcal, 3.34g protein, 6.66g carbs, 1.79g fat). The response appears to be answering a different question about raw barley rather than using the provided context about soup barley. Only minimal credit given for mentioning that cooked values differ from raw, which indirectly acknowledges the context might be cooked barley.",0,0,[],0,soup barley,"How much protein, calories, carbs, and fat is in 100g of soup barley? Please provide the exact values.","Food Item: soup barley
-Serving Size: 100g
-Calories: 58 kcal
-Protein: 3.34 g
-Carbohydrates: 6.66 g
-Total Fat: 1.79 g
-Fiber: 1.1 g
-Sugars: 0.8 g
-Sodium: 247 mg
-"
-Mistral (Large 2),mistral-large2,3.67," Here are the approximate nutritional values for 100 grams of cooked soup barley (also known as pearl barley):
-
-- Calories: 128 kcal
-- Protein: 3.5 grams
-- Carbohydrates: 28.2 grams
-  - Of which fibers: 7.3 grams
-- Fat: 0.7 grams
-
-These values are approximate and may vary slightly depending on the specific brand or type of barley. It's always a good idea to check the nutrition label on the package for the most accurate information.",2,"The response provides significantly different nutritional values than those in the context. Major discrepancies include: Calories (128 vs 58 kcal), Carbohydrates (28.2g vs 6.66g), Fat (0.7g vs 1.79g), and Fiber (7.3g vs 1.1g). Only the protein value is approximately similar (3.5g vs 3.34g). The response also omits sodium content entirely, which is provided in the context. The response appears to be drawing from external knowledge rather than being grounded in the provided context.",0,0,[],0,soup barley,"How much protein, calories, carbs, and fat is in 100g of soup barley? Please provide the exact values.","Food Item: soup barley
-Serving Size: 100g
-Calories: 58 kcal
-Protein: 3.34 g
-Carbohydrates: 6.66 g
-Total Fat: 1.79 g
-Fiber: 1.1 g
-Sugars: 0.8 g
-Sodium: 247 mg
-"
-Snowflake (Arctic),snowflake-arctic,1.25,"100g of soup barley contains approximately:
-
-- Protein: 11.5g
-- Calories: 354
-- Carbohydrates: 73.4g
-- Fat: 2.3g
-
-Source: USDA FoodData Central",1,"The response provides nutritional values that are significantly different from those in the context. For example, the response states 354 calories vs 58 kcal in context, 11.5g protein vs 3.34g in context, and 73.4g carbohydrates vs 6.66g in context. The response appears to describe raw/dry barley rather than prepared soup barley as specified in the context. The response is not grounded in the provided context.",0,0,[],0,soup barley,"How much protein, calories, carbs, and fat is in 100g of soup barley? Please provide the exact values.","Food Item: soup barley
-Serving Size: 100g
-Calories: 58 kcal
-Protein: 3.34 g
-Carbohydrates: 6.66 g
-Total Fat: 1.79 g
-Fiber: 1.1 g
-Sugars: 0.8 g
-Sodium: 247 mg
-"
-OpenAI (GPT 4.1),openai-gpt-4.1,2.2,"Here are the **approximate nutritional values per 100g of uncooked soup barley** (also known as pearl barley):
-
-- **Calories:** 352 kcal  
-- **Protein:** 9.9 g  
-- **Carbohydrates:** 77.7 g  
-  - **Sugars:** 0.8 g  
-- **Fat:** 1.2 g  
-  - **Saturated fat:** 0.2 g  
-- **Fiber:** 15.6 g  
-
-**Source:** USDA FoodData Central ([link](https://fdc.nal.usda.gov/fdc-app.html#/food-details/170298/nutrients)), entry for ""Barley, pearled, raw"".
-
-*Note: Values may vary slightly by brand or source, but these are standard reference values for uncooked pearl barley (soup barley).*",1,"The response provides nutritional values that are drastically different from the context. For example, the context shows 58 kcal per 100g while the response claims 352 kcal; context shows 3.34g protein while response claims 9.9g; context shows 6.66g carbohydrates while response claims 77.7g. The response appears to be describing uncooked barley while the context likely describes cooked soup barley. The response is not grounded in the provided context at all, though it may be factually accurate for a different preparation state.",0,0,[],0,soup barley,"How much protein, calories, carbs, and fat is in 100g of soup barley? Please provide the exact values.","Food Item: soup barley
-Serving Size: 100g
-Calories: 58 kcal
-Protein: 3.34 g
-Carbohydrates: 6.66 g
-Total Fat: 1.79 g
-Fiber: 1.1 g
-Sugars: 0.8 g
-Sodium: 247 mg
-"
-Meta (Llama 3.1 70B),llama3.1-70b,7.68,"However, I need to clarify that ""crisp berry"" is not a specific type of food that I can find in my database. Could you please provide more context or information about what you mean by ""crisp berry""? Is it a type of cereal, a snack, or a specific brand of food?
-
-If you meant to ask about a different type of food, please let me know and I'll do my best to provide the exact values for you.
-
-If you're looking for a general estimate, I can provide you with the approximate values for a generic ""berry crisp"" or ""berry cereal"" type of food. However, please note that these values may not be exact and may vary depending on the specific ingredients and brand.
-
-Here are some approximate values for a generic ""berry crisp"" type of food:
-
-* Protein: 2-3g per 100g serving
-* Calories: 350-400 per 100g serving
-* Carbohydrates: 70-80g per 100g serving
-* Fat: 10-15g per 100g serving
-
-Please keep in mind that these values are approximate and may not reflect the exact values for the specific food you are looking for. If you have any more information or clarification, I'd be happy to try and provide more accurate values.",1,"The response is poorly grounded in the context. The context provides specific, detailed nutritional information for 'crisp berry' (228 kcal, 3.41g protein, 32.81g carbs, etc.), but the response claims it cannot find this food in its database and provides completely different approximate values (350-400 kcal, 2-3g protein, 70-80g carbs) that contradict the context. The response should have simply reported the values provided in the context instead of claiming ignorance and offering inaccurate alternatives.",0,0,[],0,crisp berry,"How much protein, calories, carbs, and fat is in 100g of crisp berry? Please provide the exact values.","Food Item: crisp berry
-Serving Size: 100g
-Calories: 228 kcal
-Protein: 3.41 g
-Carbohydrates: 32.81 g
-Total Fat: 7.74 g
-Fiber: 5.0 g
-Sugars: 16.59 g
-Sodium: 119 mg
-"
-Anthropic (Claude 3.5 Sonnet),claude-3-5-sonnet,3.38,"I apologize, but I cannot provide exact nutritional values for ""crisp berry"" as this is not a standard food item. If you're referring to a specific berry or product, please clarify which one (e.g., strawberries, blueberries, raspberries, or a specific brand of berry-flavored crisp snack). Once you specify the exact food item, I can provide accurate nutritional information.",1,"The response is not grounded in the context at all. The context provides complete and specific nutritional information for 'crisp berry' (100g serving), including calories, protein, carbohydrates, fat, fiber, sugars, and sodium. However, the response claims it cannot provide this information and asks for clarification, completely ignoring the detailed nutritional data that was already provided in the context.",0,0,[],0,crisp berry,"How much protein, calories, carbs, and fat is in 100g of crisp berry? Please provide the exact values.","Food Item: crisp berry
-Serving Size: 100g
-Calories: 228 kcal
-Protein: 3.41 g
-Carbohydrates: 32.81 g
-Total Fat: 7.74 g
-Fiber: 5.0 g
-Sugars: 16.59 g
-Sodium: 119 mg
-"
-Mistral (Large 2),mistral-large2,8.49," The nutritional content of ""crisp berry"" can vary depending on the specific type of berry and its preparation method. However, if you are referring to a specific product or brand, the exact values would be best obtained from the product's packaging or the manufacturer's website.
-
-For a general idea, here are the approximate nutritional values for 100 grams of some common berries:
-
-### Strawberries:
-- Calories: 32 kcal
-- Protein: 0.7 g
-- Carbohydrates: 7.7 g
-- Fat: 0.3 g
-
-### Blueberries:
-- Calories: 57 kcal
-- Protein: 0.7 g
-- Carbohydrates: 14.5 g
-- Fat: 0.3 g
-
-### Raspberries:
-- Calories: 52 kcal
-- Protein: 1.2 g
-- Carbohydrates: 11.9 g
-- Fat: 0.7 g
-
-### Blackberries:
-- Calories: 43 kcal
-- Protein: 1.4 g
-- Carbohydrates: 10.2 g
-- Fat: 0.5 g
-
-If you have a specific type of ""crisp berry"" in mind, please provide more details so I can give you the most accurate information.",2,"The response is poorly grounded in the provided context. The context gives specific nutritional information for 'crisp berry' (228 kcal, 3.41g protein, etc.), but the response ignores this entirely and instead provides generic nutritional information for fresh berries (strawberries, blueberries, etc.) which have vastly different values. The response treats 'crisp berry' as if no information was provided, when in fact detailed nutritional data was given in the context. A grounded response would have simply presented or referenced the specific values provided in the context.",0,0,[],0,crisp berry,"How much protein, calories, carbs, and fat is in 100g of crisp berry? Please provide the exact values.","Food Item: crisp berry
-Serving Size: 100g
-Calories: 228 kcal
-Protein: 3.41 g
-Carbohydrates: 32.81 g
-Total Fat: 7.74 g
-Fiber: 5.0 g
-Sugars: 16.59 g
-Sodium: 119 mg
-"
-Snowflake (Arctic),snowflake-arctic,0.88," I am sorry, but I could not find the nutritional information for ""crisp berry."" Can you please provide more context or clarify what type of food this is?",1,"The response is completely ungrounded. The context clearly provides detailed nutritional information for 'crisp berry' including calories, protein, carbohydrates, fat, fiber, sugars, and sodium. However, the response claims it could not find this information and asks for clarification, directly contradicting the available context.",0,0,[],0,crisp berry,"How much protein, calories, carbs, and fat is in 100g of crisp berry? Please provide the exact values.","Food Item: crisp berry
-Serving Size: 100g
-Calories: 228 kcal
-Protein: 3.41 g
-Carbohydrates: 32.81 g
-Total Fat: 7.74 g
-Fiber: 5.0 g
-Sugars: 16.59 g
-Sodium: 119 mg
-"
-OpenAI (GPT 4.1),openai-gpt-4.1,3.28,"It appears there may be some ambiguity in your question. ""Crisp berry"" is not a standard food item with universally recognized nutritional values. If you are referring to a specific product (such as a breakfast cereal called ""Crisp Berry"" or a type of berry that is crisp), please clarify the brand or type.
-
-However, if you are referring to a general mix of berries (such as strawberries, raspberries, blueberries, etc.) that are fresh and crisp, here are approximate nutritional values per 100g for a mixed berry blend:
-
-**Mixed Berries (per 100g, average):**
-- **Calories:** 50 kcal
-- **Protein:** 0.7 g
-- **Carbohydrates:** 12 g
-  - **Sugars:** 7 g
-- **Fat:** 0.3 g
-
-If you meant a specific product or a different food, please provide more details for an exact answer.",2,"The response is poorly grounded in the provided context. The context clearly provides specific nutritional information for 'crisp berry' (228 kcal, 3.41g protein, 32.81g carbs, etc.), but the response ignores this entirely. Instead, it questions the validity of 'crisp berry' as a food item and provides alternative nutritional values for mixed berries (50 kcal, 0.7g protein, 12g carbs) that completely contradict the context. The response should have simply presented the nutritional information provided in the context rather than dismissing it and offering unrelated data.",0,0,[],0,crisp berry,"How much protein, calories, carbs, and fat is in 100g of crisp berry? Please provide the exact values.","Food Item: crisp berry
-Serving Size: 100g
-Calories: 228 kcal
-Protein: 3.41 g
-Carbohydrates: 32.81 g
-Total Fat: 7.74 g
-Fiber: 5.0 g
-Sugars: 16.59 g
-Sodium: 119 mg
 "

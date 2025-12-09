@@ -1,5 +1,11 @@
 
 import streamlit as st
+import sys
+import os
+
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from langchain_community.chat_models import ChatSnowflakeCortex
 from langchain.schema import HumanMessage
 from utils.db import get_snowpark_session

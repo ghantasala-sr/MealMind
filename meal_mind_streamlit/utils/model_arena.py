@@ -28,43 +28,151 @@ class ModelArena:
         self.session = session
 
     def _retrieve_cortex_search(self, query: str) -> str:
-        """Fetch context from Cortex Search Service using SQL"""
+        """Fetch context from Cortex Search Service using MCP"""
         try:
-            # Use SEARCH_PREVIEW to retrieve relevant chunks
-            # Syntax: SNOWFLAKE.CORTEX.SEARCH_PREVIEW(service_name, query, [columns], limit)
-            # Assuming service name is 'MEAL_MIND' and we want 'chunk' column
+            import os
+            import json
+            from utils.mcp_client import MealMindMCPClient
             
-            search_query = f"""
-                SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
-                    'MEAL_MIND',
-                    '{query.replace("'", "''")}',
-                    '{{"limit": 5}}'
-                ) as search_result
-            """
+            # Get credentials and context
+            account = os.getenv("SNOWFLAKE_ACCOUNT")
+            db = os.getenv("SNOWFLAKE_DATABASE")
+            schema = os.getenv("SNOWFLAKE_SCHEMA")
             
-            # Ensure warehouse context
-            self.session.sql(f"USE WAREHOUSE {self.session.get_current_warehouse()};").collect()
-            rows = self.session.sql(search_query).collect()
+            # Get session token from Snowpark session
+            # session.connection returns the snowflake-connector-python connection object
+            token = self.session.connection.rest.token
             
-            if not rows:
+            if not all([account, token, db, schema]):
+                print("DEBUG: Missing credentials for MCP client")
                 return ""
                 
-            result_json = json.loads(rows[0]["SEARCH_RESULT"])
-            results = result_json.get("results", [])
+            # Initialize MCP Client
+            client = MealMindMCPClient(account, token, db, schema)
             
-            # Combine chunks into a single context string
-            context_parts = []
-            for r in results:
-                # Assuming 'chunk' or 'content' is the text field. Adjust based on actual schema.
-                # Fallback to dumping the whole row if specific field unknown.
-                text = r.get("chunk") or r.get("content") or str(r)
-                context_parts.append(text)
+            # Perform search
+            # We can limit to 5 results as before
+            print(f"DEBUG: MCP Search Input Query: '{query}'")
+            
+            columns = [
+                "FOOD_ID", "FOOD_RECORD_ID", "FOOD_NAME", "PRIMARY_INGREDIENT", 
+                "SECONDARY_INGREDIENT", "ENERGY_KCAL", "PROTEIN_G", "CARBOHYDRATE_G", 
+                "FIBER_TOTAL_G", "TOTAL_FAT_G", "SODIUM_MG", "PROTEIN_PCT", 
+                "IS_APPROPRIATE_PORTION"
+            ]
+            
+            response = client.search_foods(query, columns=columns, limit=5)
+            print(f"DEBUG: MCP Search Output Response: {json.dumps(response, indent=2)}")
+            
+            if "error" in response:
+                print(f"DEBUG: MCP Search Error: {response['error']}")
+                return ""
                 
+            result_content = response.get("result", {}).get("content", [])
+            
+            context_parts = []
+            for item in result_content:
+                if item.get("type") == "text":
+                    text = item.get("text")
+                    # With specific columns, the text might be a JSON string representation of the row
+                    # or a list of such strings.
+                    try:
+                        import json
+                        data = json.loads(text)
+                        
+                        # Helper to format a single record
+                        def format_record(record):
+                            # If record is a string (which shouldn't happen if we parsed it), return it
+                            if isinstance(record, str):
+                                return record
+                            
+                            # Format nicely
+                            parts = []
+                            if "FOOD_NAME" in record:
+                                parts.append(f"Food: {record['FOOD_NAME']}")
+                            
+                            # Add nutritional info
+                            nutrients = []
+                            if "ENERGY_KCAL" in record: nutrients.append(f"Calories: {record['ENERGY_KCAL']} kcal")
+                            if "PROTEIN_G" in record: nutrients.append(f"Protein: {record['PROTEIN_G']}g")
+                            if "CARBOHYDRATE_G" in record: nutrients.append(f"Carbs: {record['CARBOHYDRATE_G']}g")
+                            if "TOTAL_FAT_G" in record: nutrients.append(f"Fat: {record['TOTAL_FAT_G']}g")
+                            if "FIBER_TOTAL_G" in record: nutrients.append(f"Fiber: {record['FIBER_TOTAL_G']}g")
+                            
+                            if nutrients:
+                                parts.append(" | ".join(nutrients))
+                                
+                            # Add other details if relevant
+                            if "PRIMARY_INGREDIENT" in record and record["PRIMARY_INGREDIENT"]:
+                                parts.append(f"Main Ingredient: {record['PRIMARY_INGREDIENT']}")
+                                
+                            return "\n".join(parts)
+
+                        if isinstance(data, list):
+                            for chunk in data:
+                                context_parts.append(format_record(chunk))
+                        elif isinstance(data, dict):
+                             context_parts.append(format_record(data))
+                        else:
+                            context_parts.append(str(data))
+                    except:
+                        context_parts.append(text)
+                        
             return "\n\n".join(context_parts)
             
         except Exception as e:
             print(f"DEBUG: Cortex Search Failed: {e}")
             return ""
+
+    def _evaluate_groundedness(self, response_text: str, context: str) -> Dict[str, Any]:
+        """
+        Evaluate the groundedness of the response based on the context using the Judge LLM.
+        """
+        try:
+            judge = CustomChatSnowflake(
+                session=self.session,
+                model=self.JUDGE_MODEL
+            )
+            
+            prompt = f"""
+            You are an impartial judge evaluating the quality of an answer given a context.
+            
+            CONTEXT:
+            {context}
+            
+            ANSWER:
+            {response_text}
+            
+            Task:
+            1. Rate the answer on a scale of 1 to 10 based on how well it is supported by the context.
+            2. Provide a brief explanation.
+            
+            Format your response as a JSON object with keys: "score" (integer) and "explanation" (string).
+            """
+            
+            eval_response = judge.invoke([HumanMessage(content=prompt)])
+            content = eval_response.content
+            
+            # Parse JSON from response
+            try:
+                # Clean up potential markdown code blocks
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                    
+                result = json.loads(content.strip())
+                return result
+            except:
+                # Fallback parsing
+                import re
+                score_match = re.search(r'"score":\s*(\d+)', content)
+                score = int(score_match.group(1)) if score_match else 0
+                return {"score": score, "explanation": content}
+                
+        except Exception as e:
+            print(f"DEBUG: Evaluation Failed: {e}")
+            return {"score": 0, "explanation": f"Evaluation failed: {e}"}
 
     def run_comparison(self, prompt: str, model_context: str = None, ground_truth: str = None) -> List[Dict[str, Any]]:
         """
