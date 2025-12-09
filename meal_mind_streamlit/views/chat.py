@@ -147,13 +147,12 @@ def render_chat(conn, user_id):
     if "chat_agent" not in st.session_state:
         import importlib
         import utils.chat_agent
-        importlib.reload(utils.chat_agent)
-        from utils.chat_agent import ChatAgent # Re-import class after reload
+        import utils.meal_router_agent
+        import utils.meal_adjustment_agent
         
-        session = get_snowpark_session()
-        # Note: We are using the original ChatAgent class here, not MealRouterAgent for now to debug
-        # Or if MealRouterAgent inherits from ChatAgent, we need to reload that too.
-        # Let's check imports. The file uses MealRouterAgent.
+        importlib.reload(utils.chat_agent)
+        importlib.reload(utils.meal_adjustment_agent)
+        importlib.reload(utils.meal_router_agent)
         
         from utils.meal_router_agent import MealRouterAgent
         

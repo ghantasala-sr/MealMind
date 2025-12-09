@@ -1,7 +1,11 @@
 import streamlit as st
 import json
+import warnings
 from langchain_community.chat_models import ChatSnowflakeCortex
 from langchain.schema import SystemMessage, HumanMessage
+
+# Suppress the specific warning from ChatSnowflakeCortex about default parameters
+warnings.filterwarnings("ignore", message=".*is not default parameter.*")
 from utils.db import (
     get_daily_meal_id, 
     get_meal_detail_id, 
@@ -70,9 +74,17 @@ class MealAdjustmentAgent:
         
         TASK:
         Generate the FULL UPDATED JSON for the meal.
-        - If APPEND/REMOVE/REPLACE: Modify the CURRENT MEAL DATA accordingly. Update nutrition, ingredients, and name.
-        - If REPORT/REQUEST: Ignore current data and generate new data.
-        - Calculate the new total nutrition accurately.
+        1. SEARCH: Use your search capabilities (Cortex Search) to find accurate nutrition data for any new items.
+        2. UPDATE:
+           - If APPEND/REMOVE/REPLACE: Modify the CURRENT MEAL DATA accordingly. Update nutrition, ingredients, and name.
+           - If REPORT/REQUEST: Ignore current data and generate new data.
+        3. CALCULATE: Calculate the new total nutrition accurately based on the search results.
+        
+        CRITICAL FORMATTING RULES:
+        1. Return ONLY valid JSON.
+        2. Do NOT use comments (// or #).
+        3. Do NOT use arithmetic expressions (e.g., "50 + 20"). Calculate the final value (e.g., "70").
+        4. Ensure all keys and string values are enclosed in double quotes.
         
         Return ONLY the JSON.
         """
@@ -107,15 +119,31 @@ class MealAdjustmentAgent:
             ]
             response = self.llm.invoke(messages)
             content = response.content.strip()
+            print(f"DEBUG: LLM RAW CONTENT: {content}")
             
-            # Clean JSON
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-            content = content.strip()
+            # Robust JSON Extraction
+            import re
             
-            meal_data = json.loads(content)
+            # 1. Try to find JSON block
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(0)
+            
+            # 2. Clean up common LLM mistakes
+            # Remove trailing commas before closing braces/brackets
+            content = re.sub(r',(\s*[}\]])', r'\1', content)
+            
+            try:
+                meal_data = json.loads(content)
+            except json.JSONDecodeError:
+                # Fallback: Try to use a more aggressive cleanup if standard load fails
+                # Sometimes LLMs put comments // or # in JSON
+                content = re.sub(r'//.*', '', content)
+                content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+                meal_data = json.loads(content)
+                
+            if not isinstance(meal_data, dict):
+                raise ValueError("LLM returned a list or primitive instead of a JSON object")
             
             # 3. Update Database (meal_data is already the full updated state)
             

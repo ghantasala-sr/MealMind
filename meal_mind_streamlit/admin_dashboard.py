@@ -79,45 +79,208 @@ def get_generation_stats(conn):
 
 def main():
     st.title("🛡️ Meal Mind Admin Dashboard")
-    st.markdown("Monitor automated meal plan generation status.")
     
     conn = get_snowflake_connection()
     
-    if st.button("🔄 Refresh Data"):
-        st.rerun()
+    # Create tabs
+    tab1, tab2, tab3 = st.tabs(["Generation Queue", "Nutrition Verifier", "Model Arena"])
     
-    stats = get_generation_stats(conn)
-    
-    # Metrics
-    col1, col2, col3 = st.columns(3)
-    
-    col1.metric("Generating Today", stats["today_count"], delta_color="normal")
-    col2.metric("Generating Tomorrow", stats["tomorrow_count"], delta_color="normal")
-    col3.metric("Issues / Overdue", stats["overdue_count"], delta_color="inverse")
-    
-    # Detailed Table
-    st.markdown("### 📋 Generation Queue & Issues")
-    if stats["details"]:
-        df = pd.DataFrame(stats["details"])
+    with tab1:
+        st.header("Generation Queue & Issues")
+        if st.button("🔄 Refresh Data"):
+            st.rerun()
+            
+        stats = get_generation_stats(conn)
         
-        # Color coding function
-        def highlight_status(val):
-            color = ''
-            if 'Overdue' in val:
-                color = 'background-color: #ffcdd2; color: #c62828' # Red
-            elif 'Today' in val:
-                color = 'background-color: #fff9c4; color: #fbc02d' # Yellow
-            elif 'Tomorrow' in val:
-                color = 'background-color: #c8e6c9; color: #2e7d32' # Green
-            return color
+        # Metrics
+        col1, col2, col3 = st.columns(3)
+        
+        col1.metric("Generating Today", stats["today_count"], delta_color="normal")
+        col2.metric("Generating Tomorrow", stats["tomorrow_count"], delta_color="normal")
+        col3.metric("Issues / Overdue", stats["overdue_count"], delta_color="inverse")
+        
+        # Detailed Table
+        if stats["details"]:
+            df = pd.DataFrame(stats["details"])
+            
+            # Color coding function
+            def highlight_status(val):
+                color = ''
+                if 'Overdue' in val:
+                    color = 'background-color: #ffcdd2; color: #c62828' # Red
+                elif 'Today' in val:
+                    color = 'background-color: #fff9c4; color: #fbc02d' # Yellow
+                elif 'Tomorrow' in val:
+                    color = 'background-color: #c8e6c9; color: #2e7d32' # Green
+                return color
 
-        st.dataframe(
-            df.style.map(highlight_status, subset=['Status']),
-            use_container_width=True,
-            hide_index=True
-        )
-    else:
-        st.info("No pending generations for today or tomorrow, and no overdue plans.")
+            st.dataframe(
+                df.style.map(highlight_status, subset=['Status']),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No pending generations for today or tomorrow, and no overdue plans.")
+
+    with tab2:
+        st.header("🧪 Nutrition Data Verifier")
+        st.markdown("Verify the accuracy of AI-generated nutrition data against Snowflake Cortex Search.")
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            food_name = st.text_input("Food Item Name", placeholder="e.g., Peanut butter cookie")
+            json_input = st.text_area("Generated JSON", height=300, placeholder='Paste the full JSON here...')
+            
+            verify_btn = st.button("Verify Nutrition", type="primary")
+            
+        with col2:
+            if verify_btn and food_name and json_input:
+                try:
+                    import json
+                    from utils.evaluation_agent import NutritionEvaluationAgent
+                    from utils.db import get_snowpark_session
+                    
+                    # Parse JSON
+                    data = json.loads(json_input)
+                    
+                    # Init Agent
+                    session = get_snowpark_session()
+                    eval_agent = NutritionEvaluationAgent(session)
+                    
+                    with st.spinner(f"Consulting Cortex Search for '{food_name}'..."):
+                        result = eval_agent.evaluate_nutrition(food_name, data)
+                        
+                    # Display Result
+                    if result['verdict'] == "CORRECT":
+                        st.success(f"✅ VERDICT: {result['verdict']}")
+                    else:
+                        st.error(f"❌ VERDICT: {result['verdict']}")
+                        
+                    st.markdown(f"**Explanation:** {result['explanation']}")
+                    
+                    if result.get('ground_truth'):
+                        st.subheader("Ground Truth (Cortex)")
+                        st.json(result['ground_truth'])
+                        
+                except json.JSONDecodeError:
+                    st.error("Invalid JSON format. Please check your input.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    with tab3:
+        st.header("⚔️ Model Comparison Arena")
+        st.markdown("Compare top LLMs (Meta, Anthropic, Mistral, Snowflake) on latency and groundedness.")
+        
+        mode = st.radio("Evaluation Mode", ["Single Prompt (Dynamic)", "Batch Evaluation (CSV)"], horizontal=True)
+        
+        if mode == "Single Prompt (Dynamic)":
+            arena_prompt = st.text_area("Test Prompt", value="How much protein is in 100g of grilled chicken breast?", height=100)
+            run_arena_btn = st.button("Run Arena", type="primary")
+            
+            if run_arena_btn and arena_prompt:
+                from utils.model_arena import ModelArena
+                from utils.db import get_snowpark_session
+                
+                session = get_snowpark_session()
+                arena = ModelArena(session)
+                
+                results, context = arena.run_comparison(arena_prompt)
+                
+                # Display Results
+                st.subheader("🏆 Leaderboard")
+                
+                res_df = pd.DataFrame(results)
+                st.dataframe(
+                    res_df[["model_name", "latency", "groundedness_score", "explanation"]].style.highlight_max(subset=["groundedness_score"], color='#c8e6c9').highlight_min(subset=["latency"], color='#c8e6c9'),
+                    use_container_width=True
+                )
+                
+                # Charts
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("### ⏱️ Latency (s)")
+                    st.bar_chart(res_df.set_index("model_name")["latency"])
+                    
+                with col2:
+                    st.markdown("### 🎯 Groundedness (1-10)")
+                    st.bar_chart(res_df.set_index("model_name")["groundedness_score"])
+                
+                with st.expander("View Detailed Responses & Context"):
+                    st.markdown("### Ground Truth Context")
+                    st.info(context[:1000] + "...")
+                    
+                    for r in results:
+                        st.markdown(f"#### {r['model_name']}")
+                        st.write(r['response'])
+                        st.divider()
+                        
+        elif mode == "Batch Evaluation (CSV)":
+            csv_path = "meal_mind_streamlit/Meal_Mind_Combined_2025-12-06-1503.csv"
+            try:
+                df = pd.read_csv(csv_path)
+                st.success(f"Loaded {len(df)} food items from CSV.")
+                st.dataframe(df.head(), use_container_width=True)
+                
+                if st.button("🚀 Run Batch Evaluation", type="primary"):
+                    from utils.model_arena import ModelArena
+                    from utils.db import get_snowpark_session
+                    
+                    session = get_snowpark_session()
+                    arena = ModelArena(session)
+                    
+                    with st.spinner("Running batch evaluation... This may take a few minutes."):
+                        results = arena.run_batch_evaluation(df)
+                        
+                    # Process Results
+                    res_df = pd.DataFrame(results)
+                    
+                    # Save to CSV
+                    output_path = "meal_mind_streamlit/evaluation_results.csv"
+                    res_df.to_csv(output_path, index=False)
+                    st.success(f"Results saved to `{output_path}`")
+                    
+                    # Aggregate Metrics
+                    st.subheader("📊 Aggregate Performance")
+                    
+                    # Calculate Ratio per row first
+                    res_df["token_ratio"] = res_df["output_tokens"] / res_df["input_tokens"]
+                    
+                    agg_metrics = res_df.groupby("model_name").agg({
+                        "latency": "mean",
+                        "groundedness_score": "mean",
+                        "input_tokens": "mean",
+                        "output_tokens": "mean",
+                        "token_ratio": "mean"
+                    }).reset_index()
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("### ⏱️ Avg Latency (s)")
+                        st.bar_chart(agg_metrics.set_index("model_name")["latency"])
+                        
+                    with col2:
+                        st.markdown("### 🎯 Avg Groundedness (1-10)")
+                        st.bar_chart(agg_metrics.set_index("model_name")["groundedness_score"])
+                        
+                    col3, col4 = st.columns(2)
+                    with col3:
+                        st.markdown("### 🔢 Avg Output Tokens")
+                        st.bar_chart(agg_metrics.set_index("model_name")["output_tokens"])
+                        
+                    with col4:
+                        st.markdown("### ⚖️ Avg Token Ratio (Out/In)")
+                        st.bar_chart(agg_metrics.set_index("model_name")["token_ratio"])
+                        
+                    # Detailed Table
+                    st.subheader("📝 Detailed Results")
+                    st.dataframe(
+                        res_df[["food_name", "model_name", "groundedness_score", "latency", "input_tokens", "output_tokens", "token_ratio", "citation_count", "explanation"]],
+                        use_container_width=True
+                    )
+                    
+            except FileNotFoundError:
+                st.error(f"CSV file not found at `{csv_path}`. Please ensure it exists.")
 
 if __name__ == "__main__":
     main()
