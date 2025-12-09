@@ -1,8 +1,10 @@
 import json
 import streamlit as st
 import warnings
+import os
 from typing import Dict, Any, Optional
 from langchain_community.chat_models import ChatSnowflakeCortex
+from utils.mcp_client import MealMindMCPClient
 
 # Suppress the specific warning from ChatSnowflakeCortex about default parameters
 warnings.filterwarnings("ignore", message=".*is not default parameter.*")
@@ -17,15 +19,84 @@ class NutritionEvaluationAgent:
     def __init__(self, session):
         self.session = session
         try:
-            # Initialize Cortex LLM with Search Service
+            # Initialize Cortex LLM
+            # NOTE: We are now using manual MCP retrieval, so we remove cortex_search_service
             self.llm = ChatSnowflakeCortex(
                 session=self.session,
-                model="llama3.1-70b",
-                cortex_search_service="MEAL_MIND" # Assuming this service indexes the USDA/Nutrition DB
+                model="openai-gpt-4.1"
             )
+            
+            # Initialize MCP Client for Context Retrieval
+            try:
+                account = os.getenv("SNOWFLAKE_ACCOUNT")
+                db = os.getenv("SNOWFLAKE_DATABASE")
+                schema = os.getenv("SNOWFLAKE_SCHEMA")
+                token = self.session.connection.rest.token
+                
+                if all([account, token, db, schema]):
+                    self.mcp_client = MealMindMCPClient(account, token, db, schema)
+                else:
+                    print("DEBUG: Missing credentials for MCP client in EvaluationAgent")
+                    self.mcp_client = None
+            except Exception as e:
+                print(f"DEBUG: Failed to init MCP client in EvaluationAgent: {e}")
+                self.mcp_client = None
+                
         except Exception as e:
             st.warning(f"Evaluation Agent init failed: {e}")
             self.llm = None
+
+    def _retrieve_ground_truth(self, food_name: str) -> str:
+        """Retrieve ground truth nutrition data using MCP"""
+        if not self.mcp_client:
+            return "No ground truth available (MCP Client offline)."
+            
+        try:
+            # Request specific columns
+            columns = [
+                "FOOD_NAME", "ENERGY_KCAL", "PROTEIN_G", "CARBOHYDRATE_G", 
+                "TOTAL_FAT_G", "FIBER_TOTAL_G"
+            ]
+            
+            response = self.mcp_client.search_foods(food_name, columns=columns, limit=3)
+            
+            if "error" in response:
+                return f"Error retrieving ground truth: {response['error']}"
+                
+            result_content = response.get("result", {}).get("content", [])
+            context_parts = []
+            
+            for item in result_content:
+                if item.get("type") == "text":
+                    text = item.get("text")
+                    try:
+                        data = json.loads(text)
+                        
+                        def format_record(record):
+                            if isinstance(record, str): return record
+                            parts = []
+                            if "FOOD_NAME" in record: parts.append(f"Item: {record['FOOD_NAME']}")
+                            nutrients = []
+                            if "ENERGY_KCAL" in record: nutrients.append(f"Calories: {record['ENERGY_KCAL']}")
+                            if "PROTEIN_G" in record: nutrients.append(f"Protein: {record['PROTEIN_G']}g")
+                            if "CARBOHYDRATE_G" in record: nutrients.append(f"Carbs: {record['CARBOHYDRATE_G']}g")
+                            if "TOTAL_FAT_G" in record: nutrients.append(f"Fat: {record['TOTAL_FAT_G']}g")
+                            if nutrients: parts.append(" | ".join(nutrients))
+                            return "\n".join(parts)
+
+                        if isinstance(data, list):
+                            for chunk in data: context_parts.append(format_record(chunk))
+                        elif isinstance(data, dict):
+                             context_parts.append(format_record(data))
+                        else:
+                            context_parts.append(str(data))
+                    except:
+                        context_parts.append(text)
+                        
+            return "\n\n".join(context_parts) if context_parts else "No matching food items found in database."
+            
+        except Exception as e:
+            return f"Error retrieving ground truth: {str(e)}"
 
     def evaluate_nutrition(self, food_name: str, generated_json: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -44,15 +115,22 @@ class NutritionEvaluationAgent:
         # Extract nutrition from the generated JSON
         gen_nutrition = generated_json.get('nutrition', {})
         
+        # Retrieve Ground Truth
+        ground_truth_context = self._retrieve_ground_truth(food_name)
+        
         system_prompt = f"""You are a Nutrition Verification Judge.
         
         Your Goal: Verify if the nutrition data generated for "{food_name}" is accurate.
         
-        1. SEARCH: Use your knowledge and the Cortex Search tool to find the standard nutritional value for "{food_name}".
-        2. COMPARE: Compare the standard values with the GENERATED values provided below.
+        1. ANALYZE: Review the GROUND TRUTH DATA provided below, which comes from a trusted database.
+        2. COMPARE: Compare the standard values in the ground truth with the GENERATED values provided below.
         3. VERDICT: 
-           - If values are within reasonable range (+/- 20%), verdict is CORRECT.
+           - If values are within reasonable range (+/- 20%) of the ground truth, verdict is CORRECT.
            - If values are significantly off, verdict is INCORRECT.
+           - If no relevant ground truth is found, use your best judgment but note that ground truth was missing.
+           
+        GROUND TRUTH DATA (from Database):
+        {ground_truth_context}
            
         GENERATED DATA:
         {json.dumps(gen_nutrition, indent=2)}
@@ -61,7 +139,7 @@ class NutritionEvaluationAgent:
         Return a JSON object:
         {{
             "verdict": "CORRECT" or "INCORRECT",
-            "explanation": "Brief explanation of discrepancies or confirmation.",
+            "explanation": "Brief explanation of discrepancies or confirmation, citing the ground truth values used.",
             "ground_truth": {{
                 "calories": 0,
                 "protein_g": 0,

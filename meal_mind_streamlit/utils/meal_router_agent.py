@@ -7,7 +7,10 @@ from langchain.schema import SystemMessage, HumanMessage, AIMessage, BaseMessage
 warnings.filterwarnings("ignore", message=".*is not default parameter.*")
 from langgraph.graph import StateGraph, END
 import json
+import os
+import re
 from datetime import datetime
+from utils.mcp_client import MealMindMCPClient
 
 # ==================== LANGGRAPH STATE ====================
 class ChatRouterState(TypedDict):
@@ -27,9 +30,15 @@ class ChatRouterState(TypedDict):
     retrieved_data: Optional[str]
     adjustment_result: Optional[Dict]
     estimation_result: Optional[Dict]
+    recipe_result: Optional[str]
     final_messages: List[BaseMessage]
     monitoring_warnings: List[str]
     response: str # Final text response
+    
+    # Tool Tracking
+    tool_calls: List[Dict]
+    tool_outputs: List[Dict]
+    active_node: str # To know where to return after tool execution
 
 # ==================== MULTI-AGENT ROUTER ====================
 class MealRouterAgent:
@@ -41,9 +50,25 @@ class MealRouterAgent:
         try:
             self.chat_model = ChatSnowflakeCortex(
                 session=self.session,
-                model="llama3.1-70b",
-                cortex_search_service="MEAL_MIND"
+                model="openai-gpt-4.1"
             )
+            
+            # Initialize MCP Client for Context Retrieval
+            try:
+                account = os.getenv("SNOWFLAKE_ACCOUNT")
+                db = os.getenv("SNOWFLAKE_DATABASE")
+                schema = os.getenv("SNOWFLAKE_SCHEMA")
+                token = self.session.connection.rest.token
+                
+                if all([account, token, db, schema]):
+                    self.mcp_client = MealMindMCPClient(account, token, db, schema)
+                else:
+                    print("DEBUG: Missing credentials for MCP client in MealRouterAgent")
+                    self.mcp_client = None
+            except Exception as e:
+                print(f"DEBUG: Failed to init MCP client in MealRouterAgent: {e}")
+                self.mcp_client = None
+                
         except Exception as e:
             st.warning(f"Router LLM init failed: {e}")
             self.chat_model = None
@@ -58,6 +83,9 @@ class MealRouterAgent:
         from utils.feedback_agent import FeedbackAgent
         self.feedback_agent = FeedbackAgent(conn, session)
 
+        from utils.recipe_agent import RecipeAgent
+        self.recipe_agent = RecipeAgent(session)
+
         # Build Graph
         workflow = StateGraph(ChatRouterState)
         
@@ -69,6 +97,8 @@ class MealRouterAgent:
         workflow.add_node("meal_adjustment", self.node_adjust_meal)
         workflow.add_node("calorie_estimation", self.node_estimate_calories)
         workflow.add_node("general_chat", self.node_general_chat)
+        workflow.add_node("execute_tools", self.node_execute_tools)
+        workflow.add_node("recipe_lookup", self.node_provide_recipe)
         workflow.add_node("generate_response", self.node_generate_response)
         
         # Set Entry Point
@@ -86,15 +116,44 @@ class MealRouterAgent:
                 "meal_adjustment": "meal_adjustment",
                 "calorie_estimation": "calorie_estimation",
                 "general_chat": "general_chat",
+                "recipe_lookup": "recipe_lookup",
                 "generate_response": "generate_response"
             }
         )
         
-        # Edges from Action Nodes -> Back to Planner
+        # Conditional Edges from Action Nodes (for Tool Use)
+        workflow.add_conditional_edges(
+            "calorie_estimation",
+            self.decide_next_step_after_action,
+            {
+                "execute_tools": "execute_tools",
+                "planner": "planner"
+            }
+        )
+        
+        workflow.add_conditional_edges(
+            "general_chat",
+            self.decide_next_step_after_action,
+            {
+                "execute_tools": "execute_tools",
+                "generate_response": "generate_response"
+            }
+        )
+        
+        # Tool Execution -> Return to Active Node
+        workflow.add_conditional_edges(
+            "execute_tools",
+            self.return_from_tools,
+            {
+                "calorie_estimation": "calorie_estimation",
+                "general_chat": "general_chat"
+            }
+        )
+        
+        # Edges from other Action Nodes -> Back to Planner
         workflow.add_edge("meal_retrieval", "planner")
         workflow.add_edge("meal_adjustment", "planner")
-        workflow.add_edge("calorie_estimation", "planner")
-        workflow.add_edge("general_chat", "generate_response")
+        workflow.add_edge("recipe_lookup", "planner")
         
         # Response -> Feedback Extraction -> END
         workflow.add_edge("generate_response", "extract_feedback")
@@ -104,6 +163,57 @@ class MealRouterAgent:
         from langgraph.checkpoint.memory import MemorySaver
         checkpointer = MemorySaver()
         self.app = workflow.compile(checkpointer=checkpointer)
+
+    def _retrieve_context(self, query: str) -> str:
+        """Retrieve relevant food data using MCP"""
+        if not self.mcp_client:
+            return "Error: MCP Client not available."
+            
+        try:
+            # Request specific columns
+            columns = [
+                "FOOD_NAME", "ENERGY_KCAL", "PROTEIN_G", "CARBOHYDRATE_G", 
+                "TOTAL_FAT_G", "FIBER_TOTAL_G", "PRIMARY_INGREDIENT"
+            ]
+            
+            response = self.mcp_client.search_foods(query, columns=columns, limit=5)
+            
+            if "error" in response:
+                return f"Error retrieving data: {response['error']}"
+                
+            result_content = response.get("result", {}).get("content", [])
+            context_parts = []
+            
+            for item in result_content:
+                if item.get("type") == "text":
+                    text = item.get("text")
+                    try:
+                        data = json.loads(text)
+                        
+                        def format_record(record):
+                            if isinstance(record, str): return record
+                            parts = []
+                            if "FOOD_NAME" in record: parts.append(f"Item: {record['FOOD_NAME']}")
+                            nutrients = []
+                            if "ENERGY_KCAL" in record: nutrients.append(f"Calories: {record['ENERGY_KCAL']}")
+                            if "PROTEIN_G" in record: nutrients.append(f"Protein: {record['PROTEIN_G']}g")
+                            if "CARBOHYDRATE_G" in record: nutrients.append(f"Carbs: {record['CARBOHYDRATE_G']}g")
+                            if "TOTAL_FAT_G" in record: nutrients.append(f"Fat: {record['TOTAL_FAT_G']}g")
+                            if nutrients: parts.append(" | ".join(nutrients))
+                            return "\n".join(parts)
+
+                        if isinstance(data, list):
+                            for chunk in data: context_parts.append(format_record(chunk))
+                        elif isinstance(data, dict):
+                             context_parts.append(format_record(data))
+                        else:
+                            context_parts.append(str(data))
+                    except:
+                        context_parts.append(text)
+                        
+            return "\n\n".join(context_parts) if context_parts else "No matching foods found."
+        except Exception as e:
+            return f"Error executing search: {str(e)}"
 
     # ==================== MEMORY NODES ====================
     def node_load_preferences(self, state: ChatRouterState) -> ChatRouterState:
@@ -123,45 +233,27 @@ class MealRouterAgent:
             state['user_input'], 
             state['user_id']
         )
-        # We don't necessarily need to store it in state unless we want to use it immediately
-        # But the agent saves it to DB.
         return state
 
     # ==================== PLANNER NODE ====================
     def node_planner(self, state: ChatRouterState) -> ChatRouterState:
         """
         LLM-based Planner.
-        If plan is empty, generates a plan.
-        If plan exists, increments step index.
         """
         print("DEBUG: Entering node_planner")
         
-        # If we already have a plan and we are just looping back
-        if state.get('plan'):
-            # If we are coming back from an action, we need to increment
-            # But wait, how do we know if we just started or came back?
-            # We can check if we have results for the current step?
-            # Or simpler: The action nodes don't increment. Planner increments.
-            # But Planner is the entry point.
-            # Let's assume if plan is empty, we generate.
-            # If plan is NOT empty, we increment.
-            
-            # BUT: On first run, plan is empty. We generate.
-            # Then we return state. The graph goes to decide_route.
-            # decide_route sends to Action.
-            # Action sends back to Planner.
-            # Now plan is NOT empty. We increment.
-            
-            # Problem: After generation, we are still in Planner. We shouldn't increment yet.
-            # We should only increment if we are returning from an action.
-            # We can use a flag or check if we have executed the current step.
-            pass
-
-        # Logic:
-        # 1. If plan is empty: Generate Plan. Set index = 0.
-        # 2. If plan is not empty: Increment index.
-        
         if not state.get('plan'):
+            # RESET TRANSIENT STATE
+            # This ensures that results from previous turns (like recipes) don't persist
+            # into unrelated new requests.
+            state['recipe_result'] = None
+            state['adjustment_result'] = None
+            state['estimation_result'] = None
+            state['retrieved_data'] = None
+            state['tool_calls'] = []
+            state['tool_outputs'] = []
+
+            
             # Generate Plan
             user_input = state['user_input']
             today = datetime.now().strftime('%A, %B %d, %Y')
@@ -178,14 +270,30 @@ class MealRouterAgent:
             2. "meal_retrieval": Show meal plan, get recipe, check ingredients.
                Params: "meal_type" (optional), "date" (YYYY-MM-DD).
                
-            3. "calorie_estimation": Estimate calories for a generic food item (not in plan).
-               Params: "query".
+            3. "calorie_estimation": Estimate calories/nutrition for a food item (not in plan).
+               Params: "query" (the food name).
+               - Use this when user asks "nutrition for X", "calories in X", or "breakdown of X".
+               - If user says "nutrition for it", RESOLVE "it" from history.
                
             4. "general_chat": Greetings, nutrition advice, questions not about the specific meal plan.
                Params: "query".
             
+            5. "recipe_lookup": If the user asks for a recipe, ingredients, how to cook something, OR "what can I cook with my ingredients".
+               Params: "query" (the dish name or the user's question).
+            
             RULES:
             - If the user asks to modify multiple meals (e.g. "Add coffee to breakfast and remove tea from lunch"), create TWO "meal_adjustment" steps.
+            - If the user refers to "this", "that", "it", or "the recipe" (e.g., "add this to dinner"), you MUST resolve what they are referring to from the CHAT HISTORY.
+              - Example: If the previous message was about "Oatmeal", and user says "add this", the instruction should be "Add Oatmeal".
+              - Do NOT pass ambiguous instructions like "add this" or "add the item".
+            - DISTINGUISH BETWEEN HYPOTHETICALS AND ACTIONS:
+              - "How about adding garlic?", "What if I add cheese?", "Can I add nuts?" -> Use "general_chat" or "calorie_estimation" to discuss the change.
+              - "Add garlic to my lunch", "Update lunch with garlic", "I ate garlic" -> CHECK FOR CONFIRMATION.
+            - CONFIRMATION RULE (STRICT):
+              - Before generating a "meal_adjustment" action, check the CHAT HISTORY.
+              - If the user has NOT explicitly confirmed (e.g., "Yes", "Do it", "Confirm") in the last message, you MUST output a "general_chat" action with the query: "Please ask the user to confirm if they want to update their [meal]."
+              - ONLY generate "meal_adjustment" if the user has confirmed.
+            - For "meal_adjustment", the `instruction` parameter must be specific (e.g., "Add 2 slices of pizza", "Replace lunch with Chicken Salad").
             - If the user asks "What is for lunch and dinner?", create TWO "meal_retrieval" steps.
             - Always extract the DATE relative to {today}.
             - Return ONLY a JSON list of objects.
@@ -201,10 +309,18 @@ class MealRouterAgent:
             """
             
             try:
-                response = self.chat_model.invoke([
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=user_prompt)
-                ])
+                # Prepare messages with history
+                messages = [SystemMessage(content=system_prompt)]
+                
+                # Add recent history (last 5 messages) for context resolution
+                history = state.get('chat_history', [])
+                recent_history = history[-5:]
+                for msg in recent_history:
+                    messages.append(msg)
+                    
+                messages.append(HumanMessage(content=user_prompt))
+                
+                response = self.chat_model.invoke(messages)
                 content = response.content.strip()
                 if "```" in content:
                     content = content.split("```")[1]
@@ -243,10 +359,42 @@ class MealRouterAgent:
         
         print(f"DEBUG: Dispatching to {action} (Step {idx+1}/{len(plan)})")
         
-        if action in ["meal_adjustment", "meal_retrieval", "calorie_estimation", "general_chat"]:
+        if action in ["meal_adjustment", "meal_retrieval", "calorie_estimation", "general_chat", "recipe_lookup"]:
             return action
             
         return "general_chat"
+
+    def decide_next_step_after_action(self, state: ChatRouterState) -> str:
+        """Decide whether to execute tools or continue"""
+        if state.get('tool_calls'):
+            return "execute_tools"
+        
+        # If no tools, where do we go?
+        # calorie_estimation -> planner (to next step)
+        # general_chat -> generate_response (usually last step)
+        
+        # We need to know which node we came from, but LangGraph doesn't pass that easily.
+        # However, we can infer from the current action in plan.
+        
+        plan = state.get('plan', [])
+        idx = state.get('current_step_index', 0)
+        if idx < len(plan):
+            action = plan[idx]['action']
+            if action == 'calorie_estimation':
+                return "planner"
+            elif action == 'general_chat':
+                return "generate_response"
+            elif action == 'recipe_lookup':
+                return "generate_response"
+        
+        return "generate_response"
+
+    def return_from_tools(self, state: ChatRouterState) -> str:
+        """Return to the active node after tool execution"""
+        active = state.get('active_node')
+        if active:
+            return active
+        return 'general_chat'
 
     # ==================== ACTION NODES ====================
     
@@ -263,17 +411,14 @@ class MealRouterAgent:
         
         print(f"DEBUG: Adjusting {date} {meal_type}: {instruction}")
         
-        result = self.adjustment_agent.process_request(instruction, user_id, date, meal_type)
+        # Get recipe context if available
+        recipe_context = state.get('recipe_result')
         
-        # Store result. For multi-step, we might want to append.
-        # For now, let's append to a list in 'adjustment_result' or just overwrite?
-        # The state expects Optional[Dict]. Let's overwrite but maybe append message?
+        result = self.adjustment_agent.process_request(instruction, user_id, date, meal_type, recipe_context)
         
         prev_result = state.get('adjustment_result')
         if prev_result:
-            # Merge messages
             result['message'] = prev_result['message'] + "\n" + result['message']
-            # Keep latest totals
         
         state['adjustment_result'] = result
         
@@ -302,7 +447,7 @@ class MealRouterAgent:
             for m in meals:
                 formatted += f"**{m['meal_type'].title()} ({m['meal_date']})**\n"
                 formatted += f"{m['meal_name']}\n"
-                formatted += f"Calories: {m['total_nutrition']['calories']} | Protein: {m['total_nutrition']['protein_g']}g\n"
+                formatted += f"Calories: {m['nutrition']['calories']} | Protein: {m['nutrition']['protein_g']}g\n"
                 formatted += f"Ingredients: {', '.join([i['ingredient'] for i in m['ingredients_with_quantities']])}\n\n"
         else:
             formatted = f"No meals found for {meal_type} on {date}.\n"
@@ -312,36 +457,126 @@ class MealRouterAgent:
         
         return state
 
+    def node_provide_recipe(self, state: ChatRouterState) -> ChatRouterState:
+        """Execute recipe lookup step"""
+        idx = state['current_step_index']
+        step = state['plan'][idx]
+        params = step['params']
+        query = params.get('query')
+        
+        print(f"DEBUG: Generating recipe for: {query}")
+        
+        recipe_text = self.recipe_agent.generate_recipe(
+            query, 
+            state.get('user_preferences'),
+            state.get('inventory_summary')
+        )
+        
+        state['recipe_result'] = recipe_text
+        return state
+
     def node_estimate_calories(self, state: ChatRouterState) -> ChatRouterState:
         """Prepare messages for calorie estimation"""
-        user_input = state['user_input']
+        state['active_node'] = 'calorie_estimation'
         
-        system_prompt = """You are an expert nutritionist and calorie estimator. 
+        # Clear unrelated state to prevent pollution
+        state['recipe_result'] = None
+        state['adjustment_result'] = None
+        state['retrieved_data'] = None
+        
+        # Get resolved query from planner if available
+        idx = state.get('current_step_index', 0)
+        plan = state.get('plan', [])
+        query_input = state['user_input']
+        
+        if idx < len(plan):
+            step = plan[idx]
+            if step['action'] == 'calorie_estimation':
+                query_input = step['params'].get('query', state['user_input'])
+        
+        print(f"DEBUG: node_estimate_calories - Query: '{query_input}'")
+        
+        system_prompt = f"""You are an expert nutritionist and calorie estimator. 
 The user will describe a meal (e.g., from a buffet, restaurant, or home cooking).
 
-Your task is to:
-1. Analyze the food items described.
-2. Estimate portion sizes if not specified (make reasonable assumptions based on standard servings).
-3. Calculate the approximate Calories and Macronutrients (Protein, Carbs, Fat) for each item and the total.
-4. Provide a clear breakdown.
-5. Offer a brief, non-judgmental health tip regarding this meal.
+TOOLS AVAILABLE:
+1. search_foods(query: str): Search for nutritional information about specific foods. Use this when you need to know calories, macros, or ingredients for a food item that is not in the context.
+
+INSTRUCTIONS:
+- YOU MUST ALWAYS USE the `search_foods` tool. NO EXCEPTIONS.
+- **COMPOSITE DISHES (e.g., "Paneer Burji", "Chicken Sandwich"):**
+  - Do NOT just search for the full dish name.
+  - BREAK IT DOWN into main ingredients.
+  - Call `search_foods` for EACH main ingredient separately.
+  - Example: For "Paneer Burji", search for "paneer", "onion", "tomato", "ghee".
+  - Example: For "Chicken Sandwich", search for "bread", "chicken breast", "lettuce", "mayonnaise".
+- **SIMPLE FOODS (e.g., "Apple", "Egg"):**
+  - Search for the item directly.
+- FORMAT: {{"tool": "search_foods", "query": "ingredient_name"}}
+- You can output MULTIPLE tool calls in one response.
+- Do NOT output any text before the tool calls.
+- Do NOT output anything else if you are calling tools.
+
+- HANDLING SEARCH RESULTS:
+  - Aggregate the nutrition from the ingredients to estimate the total for the dish.
+  - If multiple variations are returned, choose the most relevant one.
+  - Synthesize the information into a helpful response.
+
+- FINAL OUTPUT FORMAT:
+  - Do NOT mention "search_foods", "tools", "database", or "I used a tool" in your final response.
+  - Present the information naturally as if you already knew it.
+  - Show the breakdown of ingredients if applicable.
+- Analyze the food items described.
+- Estimate portion sizes if not specified.
+- Calculate the approximate Calories and Macronutrients.
+- Provide a clear breakdown.
+- Offer a brief, non-judgmental health tip.
 
 Format the output using Markdown:
 - Use bold for totals.
 - Use a list for the breakdown.
 """
         
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_input)
-        ]
+        # Add tool outputs to history
+        tool_outputs = state.get('tool_outputs', [])
+        messages = [SystemMessage(content=system_prompt)]
+        
+
+                
+        if tool_outputs:
+            for output in tool_outputs:
+                messages.append(AIMessage(content=f"Tool Output: {output['result']}"))
+                
+        messages.append(HumanMessage(content=query_input))
         
         response = self.chat_model.invoke(messages)
+        content = response.content.strip()
+        
+        # Check for tool calls (support multiple)
+        found_tools = []
+        try:
+            candidates = re.finditer(r'\{[^{}]*\}', content)
+            for match in candidates:
+                try:
+                    tool_call = json.loads(match.group(0))
+                    if tool_call.get("tool") == "search_foods":
+                        found_tools.append(tool_call)
+                except:
+                    pass
+        except:
+            pass
+            
+        if found_tools:
+            state['tool_calls'] = found_tools
+            return state
+                
+        state['tool_calls'] = []
         state['final_messages'] = [response]
         return state
 
     def node_general_chat(self, state: ChatRouterState) -> ChatRouterState:
         """Handle general conversation with full context"""
+        state['active_node'] = 'general_chat'
         idx = state['current_step_index']
         # If called from planner, use query param, else user_input
         if state.get('plan') and idx < len(state['plan']):
@@ -349,7 +584,7 @@ Format the output using Markdown:
             query = step['params'].get('query', state['user_input'])
         else:
             query = state['user_input']
-        
+            
         user_profile = state['user_profile']
         inventory = state.get('inventory_summary', '')
         meal_plan = state.get('meal_plan_summary', '')
@@ -381,13 +616,26 @@ CURRENT INVENTORY:
 MEAL PLAN SUMMARY:
 {meal_plan[:300]}...
 
-YOUR ROLE:
+TOOLS AVAILABLE:
+1. search_foods(query: str): Search for nutritional information about specific foods. Use this when you need to know calories, macros, or ingredients for a food item that is not in the context.
+
+INSTRUCTIONS:
+- Use the `search_foods` tool to verify nutritional claims or get specific data from the database.
+- FORMAT: {{"tool": "search_foods", "query": "apple pie"}}
+- Do NOT output anything else if you are calling a tool.
+- If you have enough information (or after tool use), answer the user directly.
+- HANDLING SEARCH RESULTS:
+  - If multiple variations are returned (e.g., raw, boiled, fried), choose the most relevant one based on the user's description.
+  - If the user didn't specify preparation, present the most common form (e.g., "cooked" or "raw") or briefly summarize the options (e.g., "Raw: 33 kcal, Cooked: 59 kcal").
+  - Do NOT simply list the raw database records. Synthesize the information into a helpful response.
+- FINAL OUTPUT FORMAT:
+  - Do NOT mention "search_foods", "tools", "database", or "I used a tool" in your final response.
+  - Present the information naturally as if you already knew it.
 - Provide nutrition advice and cooking tips considering user preferences
 - Answer health and wellness questions
 - Be encouraging and supportive
 - Keep responses concise and helpful
 - IMPORTANT: Respect user dislikes and preferences in your suggestions
-- CRITICAL: STRICTLY respect the user's dietary restrictions and allergies. NEVER suggest foods they cannot eat.
 """
         
         # Prepare messages
@@ -397,12 +645,77 @@ YOUR ROLE:
         recent_history = history[-5:]
         for msg in recent_history:
              messages.append(msg)
+             
+        # Add tool outputs
+        tool_outputs = state.get('tool_outputs', [])
+        if tool_outputs:
+            for output in tool_outputs:
+                messages.append(AIMessage(content=f"Tool Output: {output['result']}"))
         
         # Add current query
         messages.append(HumanMessage(content=query))
         
         response = self.chat_model.invoke(messages)
+        content = response.content.strip()
+        
+        # Check for tool calls (support multiple)
+        found_tools = []
+        try:
+            candidates = re.finditer(r'\{[^{}]*\}', content)
+            for match in candidates:
+                try:
+                    tool_call = json.loads(match.group(0))
+                    if tool_call.get("tool") == "search_foods":
+                        print(f"\n*** TOOL CALL DETECTED (General Chat): {tool_call} ***\n")
+                        found_tools.append(tool_call)
+                except:
+                    pass
+        except:
+            pass
+            
+        if found_tools:
+            state['tool_calls'] = found_tools
+            return state
+            
+        state['tool_calls'] = []
         state['final_messages'] = [response]
+        return state
+
+    def node_execute_tools(self, state: ChatRouterState) -> ChatRouterState:
+        """Execute pending tool calls"""
+        tool_calls = state.get('tool_calls', [])
+        current_outputs = state.get('tool_outputs', [])
+        outputs = []
+        
+        # Create a set of already executed queries to prevent loops
+        executed_queries = {
+            (out['tool'], out['query']) for out in current_outputs
+        }
+        
+        for call in tool_calls:
+            if call['tool'] == 'search_foods':
+                query = call['query']
+                
+                # Check for duplicates
+                if ('search_foods', query) in executed_queries:
+                    print(f"\n*** SKIPPING DUPLICATE TOOL CALL: search_foods('{query}') ***\n")
+                    outputs.append({
+                        "tool": "search_foods", 
+                        "query": query, 
+                        "result": f"System: You have already searched for '{query}'. Do not search for it again. If no results were found, assume the data is missing."
+                    })
+                    continue
+                
+                print(f"DEBUG: Executing search_foods for query: '{query}'")
+                print(f"\n*** EXECUTING TOOL: search_foods('{query}') ***\n")
+                result = self._retrieve_context(query)
+                print(f"DEBUG: search_foods result length: {len(result)}")
+                outputs.append({"tool": "search_foods", "query": query, "result": result})
+                executed_queries.add(('search_foods', query))
+        
+        # Append to existing outputs if we are looping
+        state['tool_outputs'] = current_outputs + outputs
+        state['tool_calls'] = [] # Clear calls
         return state
 
     def node_generate_response(self, state: ChatRouterState) -> ChatRouterState:
@@ -430,10 +743,22 @@ YOUR ROLE:
         if state.get('retrieved_data'):
             response_text += "\n**Retrieved Meals:**\n" + state['retrieved_data']
             
-        # 3. General Chat
+        # 3. Recipe
+        if state.get('recipe_result'):
+            response_text += "\n" + state['recipe_result']
+
+        # 4. General Chat
         if state.get('final_messages'):
             response_text += "\n" + state['final_messages'][0].content
             
+            # If this was a calorie estimation (which uses general_chat node logic but sets active_node),
+            # we might want to ask if they want to add it.
+            # But wait, calorie_estimation uses `node_estimate_calories` which calls LLM.
+            # The result of `node_estimate_calories` is in `final_messages` because it uses `chat_model.invoke`.
+            
+            if state.get('active_node') == 'calorie_estimation':
+                 response_text += "\n\nWould you like to add this to your meal plan? If so, please confirm."
+
         if not response_text:
             response_text = "I processed your request."
             
@@ -458,7 +783,10 @@ YOUR ROLE:
             "estimation_result": None,
             "final_messages": [],
             "monitoring_warnings": [],
-            "response": ""
+            "response": "",
+            "tool_calls": [],
+            "tool_outputs": [],
+            "active_node": ""
         }
         
         config = {"configurable": {"thread_id": thread_id}} if thread_id else None
@@ -477,6 +805,8 @@ YOUR ROLE:
                     yield "__STATUS__: Adjusting meal..."
                 elif key == "meal_retrieval":
                     yield "__STATUS__: Retrieving data..."
+                elif key == "execute_tools":
+                    yield "__STATUS__: Searching database..."
                 elif key == "generate_response":
                     if value.get('response'):
                         final_response = value['response']

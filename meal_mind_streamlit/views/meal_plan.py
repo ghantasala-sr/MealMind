@@ -168,19 +168,22 @@ def render_meal_plan(conn, user_id):
                         # Parse nutrition for display
                         calories = 0
                         protein = 0
+                        fat = 0
+                        fiber = 0
                         if meal['nutrition']:
                             nut = json.loads(meal['nutrition'])
                             calories = nut.get('calories', 0)
                             protein = nut.get('protein_g', 0)
+                            fat = nut.get('fat_g', 0)
+                            fiber = nut.get('fiber_g', 0)
 
                         row = {
                             "Type": meal['meal_type'].title(),
                             "Meal Name": meal['meal_name'],
                             "Calories": f"{calories:.0f}",
                             "Protein (g)": f"{protein:.1f}",
-                            "Prep Time": f"{meal['preparation_time']} min",
-                            "Cook Time": f"{meal['cooking_time']} min",
-                            "Level": meal['difficulty_level'].title()
+                            "Fat (g)": f"{fat:.1f}",
+                            "Fiber (g)": f"{fiber:.1f}"
                         }
                         table_data.append(row)
                         
@@ -208,7 +211,8 @@ def render_meal_plan(conn, user_id):
                         "Meal Name": st.column_config.TextColumn("Meal Name", width="large"),
                         "Calories": st.column_config.NumberColumn("Calories", format="%s kcal"),
                         "Protein (g)": st.column_config.NumberColumn("Protein", format="%s g"),
-                        "Level": st.column_config.TextColumn("Level", width="small"),
+                        "Fat (g)": st.column_config.NumberColumn("Fat", format="%s g"),
+                        "Fiber (g)": st.column_config.NumberColumn("Fiber", format="%s g"),
                     }
 
                     event = st.dataframe(
