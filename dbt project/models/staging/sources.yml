@@ -1,0 +1,31 @@
+version: 2
+
+sources:
+  - name: raw_data
+    description: "Raw USDA FoodData Central tables"
+    database: MEALMINDDATA
+    schema: RAW_SCHEMA
+    tables:
+      - name: raw_food
+        description: "Main food items"
+        identifier: raw_food
+        
+      - name: raw_nutrient
+        description: "Nutrient definitions"
+        identifier: raw_nutrient
+        
+      - name: raw_food_nutrient
+        description: "Food-nutrient relationships"
+        identifier: raw_food_nutrient
+        
+      - name: raw_food_category
+        description: "Food categories"
+        identifier: raw_food_category
+        
+      - name: raw_food_portion
+        description: "Serving sizes"
+        identifier: raw_food_portion
+        
+      - name: raw_measure_unit
+        description: "Measurement units"
+        identifier: raw_measure_unit

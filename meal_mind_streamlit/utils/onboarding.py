@@ -199,14 +199,40 @@ def profile_setup_wizard(conn, user_id):
 
             if st.button("Add Item"):
                 if item_name:
-                    st.session_state.inventory_items.append({
-                        'name': item_name,
-                        'quantity': quantity,
-                        'unit': unit,
-                        'category': category
-                    })
-                    st.success(f"Added {item_name}")
-                    st.rerun()
+                    # Check for duplicate items
+                    existing_names = [item['name'].lower() for item in st.session_state.inventory_items]
+                    if item_name.lower() in existing_names:
+                        st.session_state.duplicate_warning = item_name
+                    else:
+                        st.session_state.inventory_items.append({
+                            'name': item_name,
+                            'quantity': quantity,
+                            'unit': unit,
+                            'category': category
+                        })
+                        st.success(f"Added {item_name}")
+                        st.rerun()
+
+            # Show warning with option to add anyway
+            if st.session_state.get('duplicate_warning'):
+                warned_item = st.session_state.duplicate_warning
+                st.warning(f"⚠️ '{warned_item}' is already in your inventory!")
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button("Add Anyway", type="primary"):
+                        st.session_state.inventory_items.append({
+                            'name': item_name,
+                            'quantity': quantity,
+                            'unit': unit,
+                            'category': category
+                        })
+                        st.session_state.duplicate_warning = None
+                        st.success(f"Added {warned_item}")
+                        st.rerun()
+                with col_no:
+                    if st.button("Cancel"):
+                        st.session_state.duplicate_warning = None
+                        st.rerun()
 
         # Display items
         if st.session_state.inventory_items:
@@ -310,3 +336,4 @@ def profile_setup_wizard(conn, user_id):
                         st.error(f"Error: {e}")
                     finally:
                         cursor.close()
+                        
