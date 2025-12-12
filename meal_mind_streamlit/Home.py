@@ -47,9 +47,16 @@ def main():
         st.title("🍽️ Meal Mind - AI-Powered Nutrition Intelligence")
         st.markdown("*Your personalized meal planning assistant powered by USDA nutrition data*")
 
-        tab1, tab2 = st.tabs(["🔑 Login", "📝 Sign Up"])
+        # Initialize active tab in session state
+        if 'auth_tab' not in st.session_state:
+            st.session_state.auth_tab = "🔑 Login"
+        
+        # Create tabs with selected tab from session state
+        tab_options = ["🔑 Login", "📝 Sign Up"]
+        selected_tab = st.radio("", tab_options, horizontal=True, label_visibility="collapsed", key="auth_tab")
 
-        with tab1:
+        # Login Form
+        if selected_tab == "🔑 Login":
             st.subheader("Welcome Back!")
             with st.form("login_form"):
                 username = st.text_input("Username")
@@ -71,12 +78,14 @@ def main():
                     else:
                         st.warning("Please enter both username and password")
 
-        with tab2:
+        # Sign Up Form
+        else:
             st.subheader("Create Your Account")
             with st.form("signup_form"):
                 new_username = st.text_input("Choose Username")
                 new_email = st.text_input("Email (optional)")
                 new_password = st.text_input("Choose Password", type="password")
+                st.caption("🔐 Password must have: min 8 characters, 1 uppercase, 1 lowercase, 1 number, 1 special character (!@#$%^&*)")
                 confirm_password = st.text_input("Confirm Password", type="password")
 
                 st.info("📋 After signup, we'll guide you through profile setup and meal plan generation!")
@@ -93,6 +102,8 @@ def main():
                             st.error("Password must contain at least one uppercase letter.")
                         elif not re.search(r"[a-z]", new_password):
                             st.error("Password must contain at least one lowercase letter.")
+                        elif not re.search(r"[0-9]", new_password):
+                            st.error("Password must contain at least one number.")
                         elif not re.search(r"[!@#$%^&*(),.?\":{}|<>]", new_password):
                             st.error("Password must contain at least one special character (!@#$%^&*(),.?\":{}|<>).")
                         else:

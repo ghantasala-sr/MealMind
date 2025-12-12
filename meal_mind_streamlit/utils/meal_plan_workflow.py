@@ -8,6 +8,7 @@ from typing import TypedDict, Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from langgraph.graph import StateGraph, END
 import json
+import pandas as pd
 
 # Add project root to path (dynamically finds the parent directory of 'utils')
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,6 +19,30 @@ if project_root not in sys.path:
 from utils.db import get_snowflake_connection, get_snowpark_session
 from utils.agent import MealPlanAgentWithExtraction
 from utils.feedback_agent import FeedbackAgent
+
+
+# ==================== HELPER FUNCTION ====================
+def fix_day_names_with_start_date(meal_plan_data: Dict[str, Any], start_date) -> Dict[str, Any]:
+    """Fix day names in meal plan to match actual dates starting from start_date"""
+    try:
+        days = meal_plan_data.get('meal_plan', {}).get('days', [])
+        # Use provided start_date or default to today
+        base_date = start_date if start_date else datetime.now().date()
+        # Handle if start_date is a datetime object instead of date
+        if hasattr(base_date, 'date'):
+            base_date = base_date.date()
+        for i, day_data in enumerate(days):
+            # Calculate the actual date for this day
+            current_date = base_date + timedelta(days=i)
+            # Get the correct day name from the date
+            correct_day_name = current_date.strftime('%A')
+            # Update the day_name in the data
+            day_data['day_name'] = correct_day_name
+            day_data['day'] = i + 1
+        return meal_plan_data
+    except Exception as e:
+        print(f"Could not fix day names: {e}")
+        return meal_plan_data
 
 
 # ==================== STATE DEFINITION ====================
@@ -105,8 +130,8 @@ class MealPlanWorkflow:
             cursor.execute("""
                 SELECT username, age, gender, height_cm, weight_kg, 
                        health_goal, dietary_restrictions, food_allergies,
-                       daily_calories, daily_protein, daily_carbohydrate, daily_fat,
-                       preferred_cuisines
+                       daily_calories, daily_protein, daily_carbohydrate, daily_fat, daily_fiber,
+                       preferred_cuisines, bmi, activity_level
                 FROM users
                 WHERE user_id = %s
             """, (user_id,))
@@ -128,7 +153,11 @@ class MealPlanWorkflow:
                 'daily_protein': profile_row[9],
                 'daily_carbohydrate': profile_row[10],
                 'daily_fat': profile_row[11],
-                'preferred_cuisines': profile_row[12]
+                'daily_fiber': profile_row[12],
+                'preferred_cuisines': profile_row[13],
+                'bmi': profile_row[14],
+                'activity_level': profile_row[15],
+                'user_id': user_id
             }
             
             # Get inventory
@@ -139,14 +168,25 @@ class MealPlanWorkflow:
             """, (user_id,))
             
             inventory_by_category = {}
+            inventory_list = []
             for row in cursor.fetchall():
                 category = row[3] or 'Other'
                 if category not in inventory_by_category:
                     inventory_by_category[category] = []
-                inventory_by_category[category].append({
+                
+                item_data = {
                     'item': row[0],
                     'quantity': row[1],
                     'unit': row[2]
+                }
+                inventory_by_category[category].append(item_data)
+                
+                # Also store flat list for DataFrame
+                inventory_list.append({
+                    'item_name': row[0],
+                    'quantity': row[1],
+                    'unit': row[2],
+                    'category': category
                 })
             
             # Get previous week's meals for variety
@@ -186,120 +226,8 @@ class MealPlanWorkflow:
             
             print(f"[AGENT 2] Aggregated data for {user_id}: {len(inventory_by_category)} inventory categories, {len(preferences.get('likes', []))} likes, {len(previous_meals)} previous meals")
             
-            # Build comprehensive prompt
-            profile = state['user_data']['profile']
-            inventory_by_category = state['user_data']['inventory']
-            previous_meals = state['user_data']['previous_meals']
-            preferences = state['user_data']['preferences']
-            
-            # Format preferences
-            likes = [p['name'] for p in preferences.get('likes', [])[:5]]
-            dislikes = [p['name'] for p in preferences.get('dislikes', [])[:5]]
-            cuisines = [p['name'] for p in preferences.get('cuisines', [])[:3]]
-            
-            prompt = f"""Generate a complete 7-day meal plan for:
-
-IMPORTANT: Today is {datetime.now().strftime('%A, %B %d, %Y')}. 
-The meal plan should start from TODAY and continue for 7 days.
-Ensure day names match the actual calendar dates (e.g., if today is Friday, day 1 should be Friday, day 2 should be Saturday, etc.).
-
-USER PROFILE:
-- User ID: {user_id}
-- Age: {profile.get('age')} years
-- Gender: {profile.get('gender')}
-- Height: {profile.get('height_cm')} cm
-- Weight: {profile.get('weight_kg')} kg
-- Activity Level: {profile.get('activity_level')}
-- Health Goal: {profile.get('health_goal')}
-- Dietary Restrictions: {profile.get('dietary_restrictions', 'None')}
-- Food Allergies: {profile.get('food_allergies', 'None')}
-- Preferred Cuisines: {profile.get('preferred_cuisines', 'Any')}
-
-DAILY NUTRITIONAL TARGETS:
-- Calories: {profile.get('daily_calories', 2000)} kcal
-- Protein: {profile.get('daily_protein', 130):.1f}g
-- Carbohydrates: {profile.get('daily_carbohydrate', 250):.1f}g
-- Fat: {profile.get('daily_fat', 70):.1f}g
-- Fiber: {profile.get('daily_fiber', 30):.1f}g
-
-LEARNED PREFERENCES (From User Feedback):
-- Likes: {', '.join(likes) if likes else 'None recorded'}
-- Dislikes (MUST AVOID): {', '.join(dislikes) if dislikes else 'None recorded'}
-- Preferred Cuisines: {', '.join(cuisines) if cuisines else profile.get('preferred_cuisines', 'Any')}
-
-PREVIOUS WEEK'S MEALS (For Variety - Do Not Repeat):
-{chr(10).join(previous_meals) if previous_meals else 'No previous meal history'}
-
-CURRENT INVENTORY:
-{json.dumps(inventory_by_category, indent=2)}
-
-INSTRUCTIONS:
-1. Create a detailed 7-day meal plan with complete recipes and inventory optimization
-2. Generate plans based ONLY on available inventory where possible
-3. If a critical item (like protein source) is missing from inventory, explicitly mention it as a REQUIRED PURCHASE
-4. Do NOT estimate costs
-5. Strictly follow dietary restrictions and allergies
-6. **CRITICAL: Respect learned preferences - incorporate likes and COMPLETELY AVOID all dislikes**
-7. **IMPORTANT: Provide variety - avoid repeating meals from the previous week's list**
-8. Prioritize recipes from preferred cuisines where possible
-9. Ensure each day meets the daily nutritional targets
-10. Provide variety throughout the week
-
-Return the meal plan in valid JSON format with this EXACT structure:
-{{
-  "user_summary": {{
-    "user_id": "...",
-    "health_goal": "...",
-    "daily_targets": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0, "fiber_g": 0 }},
-    "restrictions": [],
-    "allergies": []
-  }},
-  "meal_plan": {{
-    "week_summary": {{
-      "average_daily_calories": 0,
-      "average_daily_protein": 0,
-      "average_daily_carbs": 0,
-      "average_daily_fat": 0,
-      "average_daily_fiber": 0,
-      "inventory_utilization_rate": 0,
-      "future_suggestions": [
-        {{ "item": "Name", "reason": "Why", "category": "Category", "suggested_quantity": 0, "unit": "unit" }}
-      ]
-    }},
-    "days": [
-      {{
-        "day": 1,
-        "day_name": "Day Name",
-        "total_nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0, "fiber_g": 0 }},
-        "inventory_impact": {{ "items_used": 0, "new_purchases_needed": 0 }},
-        "meals": {{
-          "breakfast": {{
-            "meal_name": "Name",
-            "ingredients_with_quantities": [
-              {{ "ingredient": "Name", "quantity": 0, "unit": "unit", "from_inventory": false }}
-            ],
-            "nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0 }},
-            "recipe": {{ "prep_steps": [], "cooking_instructions": [] }}
-          }},
-          "lunch": {{ "meal_name": "Name", "ingredients_with_quantities": [], "nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0 }}, "recipe": {{ "prep_steps": [], "cooking_instructions": [] }} }},
-          "snacks": {{ "meal_name": "Name", "ingredients_with_quantities": [], "nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0 }}, "recipe": {{ "prep_steps": [], "cooking_instructions": [] }} }},
-          "dinner": {{ "meal_name": "Name", "ingredients_with_quantities": [], "nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0 }}, "recipe": {{ "prep_steps": [], "cooking_instructions": [] }} }}
-        }}
-      }}
-    ]
-  }},
-  "recommendations": {{
-    "hydration": "...",
-    "shopping_list_summary": {{
-      "proteins": [{{ "item": "Name", "total_quantity_needed": 0, "quantity_in_inventory": 0, "quantity_to_purchase": 0, "unit": "unit" }}],
-      "grains": [], "vegetables": [], "fruits": [], "pantry_items": []
-    }}
-  }},
-  "metadata": {{ "generated_at": "ISO date", "version": "1.0" }}
-}}"""
-
-            # Store prompt for next agent
-            state['user_data']['prompt'] = prompt
+            # Store raw inventory for DataFrame creation
+            state['user_data']['inventory_list'] = inventory_list
             
             print(f"[AGENT 2] Data aggregation complete for {user_id}")
             return state
@@ -316,13 +244,13 @@ Return the meal plan in valid JSON format with this EXACT structure:
 
     # ==================== AGENT 3: MEAL PLAN GENERATOR ====================
     def agent_generate_meal_plan(self, state: MealPlanGenerationState) -> MealPlanGenerationState:
-        """Generate meal plan using the constructed prompt"""
-        if not state['user_data'] or 'prompt' not in state['user_data']:
+        """Generate meal plan using batched generation (Days 1-4, then 5-7)"""
+        if not state['user_data']:
             return state
             
         user_id = state['user_data']['user_id']
-        prompt = state['user_data']['prompt']
         profile = state['user_data']['profile']
+        inventory_list = state['user_data'].get('inventory_list', [])
         
         print(f"[AGENT 3] Generating meal plan for {user_id}")
         
@@ -330,17 +258,165 @@ Return the meal plan in valid JSON format with this EXACT structure:
             # Initialize agent
             agent = MealPlanAgentWithExtraction(self.session)
             
-            # Generate plan
-            result = agent.generate_meal_plan(
-                prompt=prompt,
-                user_profile=profile
-            )
+            # Create DataFrame from inventory list
+            inventory_df = pd.DataFrame(inventory_list)
             
-            if result:
-                state['generated_plan'] = result
+            from utils.helpers import generate_comprehensive_meal_plan_prompt
+            
+            merged_plan = None
+            
+            if agent.agent:
+                # Batch 1: Days 1-4
+                print(f"[AGENT 3] Generating Batch 1 for {user_id}...")
+                
+                # Get strict start date from schedule
+                start_date_obj = state.get('current_user', {}).get('next_plan_date')
+                if not start_date_obj:
+                    start_date_obj = datetime.now().date()
+                
+                prompt_1 = generate_comprehensive_meal_plan_prompt(profile, inventory_df, start_day=1, num_days=4, start_date_obj=start_date_obj)
+                response_1 = agent.agent.invoke({"input": prompt_1})
+                raw_1 = agent.process_agent_response(response_1)
+                data_1 = agent.extract_json_from_response(raw_1)
+                
+                # Extract context from Batch 1
+                context_str = ""
+                if data_1:
+                    try:
+                        planned_meals = []
+                        days = data_1.get('meal_plan', {}).get('days', [])
+                        for day in days:
+                            meals = day.get('meals', {})
+                            for m_type, m_data in meals.items():
+                                if isinstance(m_data, dict) and 'meal_name' in m_data:
+                                    planned_meals.append(f"{m_data['meal_name']} ({m_type})")
+                        
+                        if planned_meals:
+                            context_str += "Meals planned so far:\n- " + "\n- ".join(planned_meals)
+                    except Exception as e:
+                        print(f"Error extracting context: {e}")
+
+                # Batch 2: Days 5-7
+                print(f"[AGENT 3] Generating Batch 2 for {user_id}...")
+                prompt_2 = generate_comprehensive_meal_plan_prompt(
+                    profile, 
+                    inventory_df, 
+                    start_day=5, 
+                    num_days=3, 
+                    previous_plan_context=context_str,
+                    start_date_obj=start_date_obj
+                )
+                response_2 = agent.agent.invoke({"input": prompt_2})
+                raw_2 = agent.process_agent_response(response_2)
+                data_2 = agent.extract_json_from_response(raw_2)
+                
+                # Merge Results
+                if data_1 and data_2:
+                    merged_plan = data_1
+                    
+                    # Ensure structure exists in batch 2
+                    days_2 = data_2.get('meal_plan', {}).get('days', [])
+                    
+                    # Append days from batch 2 to batch 1
+                    if 'meal_plan' in merged_plan and 'days' in merged_plan['meal_plan']:
+                        merged_plan['meal_plan']['days'].extend(days_2)
+                        
+                    # Merge shopping lists with quantity summation
+                    try:
+                        sl_1 = merged_plan.get('recommendations', {}).get('shopping_list_summary', {})
+                        sl_2 = data_2.get('recommendations', {}).get('shopping_list_summary', {})
+                        
+                        if sl_1 and sl_2:
+                            for category in ['proteins', 'produce', 'pantry', 'grains', 'vegetables', 'fruits', 'dairy_alternatives']:
+                                if category in sl_2:
+                                    if category not in sl_1:
+                                        sl_1[category] = []
+                                    
+                                    # Create a map of existing items for easy lookup
+                                    existing_items = {item['item'].lower(): item for item in sl_1[category] if 'item' in item}
+                                    
+                                    for new_item in sl_2[category]:
+                                        if 'item' not in new_item:
+                                            continue
+                                            
+                                        name = new_item['item'].lower()
+                                        if name in existing_items:
+                                            # Update quantity if units match (simple check)
+                                            existing = existing_items[name]
+                                            # Try to sum quantities if they are numbers
+                                            try:
+                                                q1 = float(existing.get('quantity_to_purchase', 0))
+                                                q2 = float(new_item.get('quantity_to_purchase', 0))
+                                                existing['quantity_to_purchase'] = q1 + q2
+                                                
+                                                # Also sum total needed
+                                                t1 = float(existing.get('total_quantity_needed', 0))
+                                                t2 = float(new_item.get('total_quantity_needed', 0))
+                                                existing['total_quantity_needed'] = t1 + t2
+                                            except:
+                                                pass # Keep original if parsing fails
+                                        else:
+                                            # Add new item
+                                            sl_1[category].append(new_item)
+                                            existing_items[name] = new_item
+                            
+                            # Sum totals
+                            sl_1['total_estimated_cost'] = float(sl_1.get('total_estimated_cost', 0)) + float(sl_2.get('total_estimated_cost', 0))
+                            sl_1['total_items_from_inventory'] = int(sl_1.get('total_items_from_inventory', 0)) + int(sl_2.get('total_items_from_inventory', 0))
+                            sl_1['total_items_to_purchase'] = int(sl_1.get('total_items_to_purchase', 0)) + int(sl_2.get('total_items_to_purchase', 0))
+                    except Exception as e:
+                        print(f"Error merging shopping lists: {e}")
+                        
+                    # Recalculate Week Summary (Averages & Utilization)
+                    try:
+                        all_days = merged_plan.get('meal_plan', {}).get('days', [])
+                        week_summary = merged_plan.get('meal_plan', {}).get('week_summary', {})
+                        
+                        if all_days:
+                            # Recalculate Nutritional Averages
+                            total_cals = sum(float(d.get('total_nutrition', {}).get('calories', 0)) for d in all_days)
+                            total_prot = sum(float(d.get('total_nutrition', {}).get('protein_g', 0)) for d in all_days)
+                            total_carbs = sum(float(d.get('total_nutrition', {}).get('carbohydrates_g', 0)) for d in all_days)
+                            total_fat = sum(float(d.get('total_nutrition', {}).get('fat_g', 0)) for d in all_days)
+                            total_fiber = sum(float(d.get('total_nutrition', {}).get('fiber_g', 0)) for d in all_days)
+                            
+                            num_days = len(all_days)
+                            week_summary['average_daily_calories'] = int(total_cals / num_days)
+                            week_summary['average_daily_protein'] = round(total_prot / num_days, 1)
+                            week_summary['average_daily_carbs'] = round(total_carbs / num_days, 1)
+                            week_summary['average_daily_fat'] = round(total_fat / num_days, 1)
+                            week_summary['average_daily_fiber'] = round(total_fiber / num_days, 1)
+                            
+                            # Recalculate Inventory Utilization
+                            # Utilization = (Items Used / Total Inventory Items) * 100
+                            total_inventory_count = len(inventory_df) if not inventory_df.empty else 0
+                            items_used_count = int(merged_plan.get('recommendations', {}).get('shopping_list_summary', {}).get('total_items_from_inventory', 0))
+                            
+                            if total_inventory_count > 0:
+                                utilization_rate = (items_used_count / total_inventory_count) * 100
+                                week_summary['inventory_utilization_rate'] = round(min(utilization_rate, 100), 1)
+                            else:
+                                week_summary['inventory_utilization_rate'] = 0
+                                
+                    except Exception as e:
+                        print(f"Error recalculating week summary: {e}")
+                        
+                    # Validate merged structure
+                    if agent.validate_meal_plan_structure(merged_plan):
+                        merged_plan = fix_day_names_with_start_date(merged_plan, start_date_obj)
+                    else:
+                        print("Merged meal plan structure is invalid")
+                        merged_plan = None
+                else:
+                     print("Failed to generate one of the batches")
+                     merged_plan = None
+            
+            if merged_plan:
+                state['generated_plan'] = merged_plan
                 print(f"[AGENT 3] Successfully generated plan for {user_id}")
             else:
-                raise Exception("Agent returned None")
+                print(f"[AGENT 3] Failed to generate plan, using mock")
+                state['generated_plan'] = agent.generate_mock_meal_plan(profile)
                 
             return state
             
@@ -352,7 +428,64 @@ Return the meal plan in valid JSON format with this EXACT structure:
                 'error': str(e),
                 'timestamp': datetime.now().isoformat()
             })
-            state['generated_plan'] = None
+            # Fallback to mock on error
+            try:
+                agent = MealPlanAgentWithExtraction(self.session)
+                state['generated_plan'] = agent.generate_mock_meal_plan(profile)
+            except:
+                state['generated_plan'] = None
+            return state
+
+    # ==================== AGENT 3.5: SHOPPING LIST CONSOLIDATOR ====================
+    def agent_consolidate_shopping_list(self, state: MealPlanGenerationState) -> MealPlanGenerationState:
+        """Consolidate shopping list to merge duplicates and normalize units"""
+        if not state.get('generated_plan'):
+            return state
+            
+        print(f"[AGENT 3.5] Consolidating shopping list...")
+        
+        try:
+            plan = state['generated_plan']
+            shopping_list = plan.get('recommendations', {}).get('shopping_list_summary', {})
+            
+            if not shopping_list:
+                return state
+                
+            # Initialize agent
+            agent = MealPlanAgentWithExtraction(self.session)
+            if not agent.agent:
+                return state
+                
+            prompt = f"""
+            Analyze and consolidate this shopping list to merge duplicate items and normalize units.
+            
+            CURRENT LIST:
+            {json.dumps(shopping_list, indent=2)}
+            
+            INSTRUCTIONS:
+            1. Merge items that are the same but named slightly differently (e.g., "Onions" vs "Onion", "2 medium" vs "40g").
+            2. If units are compatible (e.g., grams and kg, or count), sum the quantities.
+            3. If units are different and hard to convert (e.g., "bunch" vs "g"), keep the most descriptive one or try to estimate.
+            4. Ensure the output has the EXACT same JSON structure as the input (keys: proteins, produce, pantry, grains, vegetables, fruits, dairy_alternatives).
+            5. Return ONLY the JSON object.
+            """
+            
+            response = agent.agent.invoke({"input": prompt})
+            raw_response = agent.process_agent_response(response)
+            consolidated_list = agent.extract_json_from_response(raw_response)
+            
+            if consolidated_list and isinstance(consolidated_list, dict):
+                # Update the plan with consolidated list
+                state['generated_plan']['recommendations']['shopping_list_summary'] = consolidated_list
+                print(f"[AGENT 3.5] Shopping list consolidated successfully")
+            else:
+                print(f"[AGENT 3.5] Failed to parse consolidated list, keeping original")
+                
+            return state
+            
+        except Exception as e:
+            print(f"[AGENT 3.5] Error consolidating shopping list: {e}")
+            # On error, just return state with original list
             return state
     
     # ==================== AGENT 4: PLAN PERSISTER ====================
@@ -382,14 +515,16 @@ Return the meal plan in valid JSON format with this EXACT structure:
             # Save meal plan (using existing helpers)
             from utils.helpers import save_meal_plan
             
-            # Get schedule_id from user object
+            # Get schedule_id and next_plan_date from user object
             schedule_id = state['current_user'].get('schedule_id')
+            next_plan_date = state['current_user'].get('next_plan_date')
             
             save_meal_plan(
                 conn=self.conn,
                 user_id=user_id,
                 schedule_id=schedule_id,
-                meal_plan_data=plan
+                meal_plan_data=plan,
+                start_date=next_plan_date
             )
             
             # Update planning_schedule
@@ -469,6 +604,7 @@ Return the meal plan in valid JSON format with this EXACT structure:
         workflow.add_node("fetch_users", self.agent_fetch_users)
         workflow.add_node("aggregate_data", self.agent_aggregate_user_data)
         workflow.add_node("generate_plan", self.agent_generate_meal_plan)
+        workflow.add_node("consolidate_list", self.agent_consolidate_shopping_list)
         workflow.add_node("persist_plan", self.agent_persist_plan)
         
         # Define edges
@@ -485,7 +621,8 @@ Return the meal plan in valid JSON format with this EXACT structure:
         )
         
         workflow.add_edge("aggregate_data", "generate_plan")
-        workflow.add_edge("generate_plan", "persist_plan")
+        workflow.add_edge("generate_plan", "consolidate_list")
+        workflow.add_edge("consolidate_list", "persist_plan")
         
         # Conditional routing from persist
         workflow.add_conditional_edges(

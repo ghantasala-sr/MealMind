@@ -11,12 +11,34 @@ def render_meal_plan(conn, user_id):
     """Enhanced meal plan viewer"""
     st.header("🍽️ My Weekly Meal Plan")
 
-    from utils.db import get_meal_plan_overview, get_daily_meals_for_plan, get_weekly_meal_details, get_future_meal_plan
+    from utils.db import get_meal_plan_overview, get_daily_meals_for_plan, get_weekly_meal_details, get_future_meal_plan, get_meal_plan_history
     
     # Check for future plan
     future_plan = get_future_meal_plan(conn, user_id)
     view_plan_id = None
     
+    # History Selection
+    col_hist1, col_hist2 = st.columns([0.7, 0.3])
+    with col_hist2:
+        history = get_meal_plan_history(conn, user_id)
+        if history:
+            # Format options for dropdown
+            plan_options = {p['plan_id']: f"{p['start_date'].strftime('%b %d')} - {p['end_date'].strftime('%b %d')}" for p in history}
+            
+            # Find current active plan to set as default
+            active_plan_id = next((p['plan_id'] for p in history if p['status'] == 'ACTIVE'), None)
+            
+            selected_plan_id = st.selectbox(
+                "📅 Select Week",
+                options=list(plan_options.keys()),
+                format_func=lambda x: plan_options[x],
+                index=list(plan_options.keys()).index(active_plan_id) if active_plan_id in plan_options else 0,
+                key="history_selector"
+            )
+            
+            if selected_plan_id:
+                view_plan_id = selected_plan_id
+
     if future_plan:
         if st.session_state.get('viewing_future_plan'):
             st.success(f"📅 Viewing Future Plan (Starts {future_plan['start_date'].strftime('%B %d')})")
@@ -25,7 +47,6 @@ def render_meal_plan(conn, user_id):
                 st.rerun()
             view_plan_id = future_plan['plan_id']
         else:
-            st.info(f"🚀 Your next meal plan (starting {future_plan['start_date'].strftime('%B %d')}) is ready!")
             if st.button("👀 View Next Week's Plan"):
                 st.session_state['viewing_future_plan'] = True
                 st.rerun()
@@ -45,10 +66,10 @@ def render_meal_plan(conn, user_id):
     plan_name = active_plan['plan_name']
     start_date = active_plan['start_date']
     end_date = active_plan['end_date']
-    week_summary = json.loads(active_plan['week_summary']) if active_plan['week_summary'] else {}
+    week_summary = active_plan['week_summary'] if active_plan['week_summary'] else {}
 
     # Header
-    col1, col2, col3 = st.columns([3, 2, 1])
+    col1, col2 = st.columns([4, 1])
     with col1:
         st.subheader(f"📋 {plan_name}")
         days_remaining = (end_date - datetime.now().date()).days
@@ -59,14 +80,6 @@ def render_meal_plan(conn, user_id):
             st.caption(f"📅 Plan ended on {end_date.strftime('%B %d')}")
 
     with col2:
-        if week_summary:
-            utilization = week_summary.get('inventory_utilization_rate', 0)
-            st.metric("Inventory Usage", f"{utilization}%")
-
-    with col3:
-        if st.button("🔄 New Plan"):
-            generate_new_meal_plan(conn, user_id)
-            
         if st.button("🔄 Refresh"):
             get_meal_plan_overview.clear()
             get_daily_meals_for_plan.clear()
@@ -133,22 +146,75 @@ def render_meal_plan(conn, user_id):
 
                     col1, col2 = st.columns([3, 1])
                     with col1:
-                        # Progress bars
-                        calories_pct = (day_nutrition.get('calories', 0) / 2000) * 100
-                        st.progress(min(calories_pct / 100, 1.0),
-                                    text=f"Calories: {day_nutrition.get('calories', 0):.0f} kcal")
-
-                        protein_pct = (day_nutrition.get('protein_g', 0) / 130) * 100
-                        st.progress(min(protein_pct / 100, 1.0),
-                                    text=f"Protein: {day_nutrition.get('protein_g', 0):.0f}g")
-                                    
-                        fat_pct = (day_nutrition.get('fat_g', 0) / 70) * 100
-                        st.progress(min(fat_pct / 100, 1.0),
-                                    text=f"Fat: {day_nutrition.get('fat_g', 0):.0f}g")
-                                    
-                        fiber_pct = (day_nutrition.get('fiber_g', 0) / 30) * 100
-                        st.progress(min(fiber_pct / 100, 1.0),
-                                    text=f"Fiber: {day_nutrition.get('fiber_g', 0):.0f}g")
+                        # Helper function to determine color
+                        def get_progress_color(actual, target):
+                            if target == 0:
+                                return "#3b82f6"  # blue
+                            ratio = actual / target
+                            if ratio > 1.0:
+                                return "#f97316"  # orange - above target
+                            elif ratio >= 0.95:
+                                return "#22c55e"  # green - within ±5%
+                            else:
+                                return "#3b82f6"  # blue - below target
+                        
+                        # Get targets from user profile
+                        cal_target = user_profile.get('daily_calories', 2000)
+                        prot_target = user_profile.get('daily_protein', 130)
+                        fat_target = user_profile.get('daily_fat', 70)
+                        fiber_target = user_profile.get('daily_fiber', 30)
+                        
+                        # Calories
+                        cal_actual = day_nutrition.get('calories', 0)
+                        cal_pct = min((cal_actual / cal_target) * 100 if cal_target else 0, 100)
+                        cal_color = get_progress_color(cal_actual, cal_target)
+                        st.markdown(f"""
+                            <div style="margin-bottom: 10px;">
+                                <div style="font-size: 14px; margin-bottom: 4px;">Calories: {cal_actual:.0f} / {cal_target} kcal</div>
+                                <div style="background: #374151; border-radius: 4px; height: 8px;">
+                                    <div style="background: {cal_color}; width: {cal_pct}%; height: 100%; border-radius: 4px;"></div>
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Protein
+                        prot_actual = day_nutrition.get('protein_g', 0)
+                        prot_pct = min((prot_actual / prot_target) * 100 if prot_target else 0, 100)
+                        prot_color = get_progress_color(prot_actual, prot_target)
+                        st.markdown(f"""
+                            <div style="margin-bottom: 10px;">
+                                <div style="font-size: 14px; margin-bottom: 4px;">Protein: {prot_actual:.0f}g / {prot_target:.0f}g</div>
+                                <div style="background: #374151; border-radius: 4px; height: 8px;">
+                                    <div style="background: {prot_color}; width: {prot_pct}%; height: 100%; border-radius: 4px;"></div>
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Fat
+                        fat_actual = day_nutrition.get('fat_g', 0)
+                        fat_pct = min((fat_actual / fat_target) * 100 if fat_target else 0, 100)
+                        fat_color = get_progress_color(fat_actual, fat_target)
+                        st.markdown(f"""
+                            <div style="margin-bottom: 10px;">
+                                <div style="font-size: 14px; margin-bottom: 4px;">Fat: {fat_actual:.0f}g / {fat_target:.0f}g</div>
+                                <div style="background: #374151; border-radius: 4px; height: 8px;">
+                                    <div style="background: {fat_color}; width: {fat_pct}%; height: 100%; border-radius: 4px;"></div>
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Fiber
+                        fiber_actual = day_nutrition.get('fiber_g', 0)
+                        fiber_pct = min((fiber_actual / fiber_target) * 100 if fiber_target else 0, 100)
+                        fiber_color = get_progress_color(fiber_actual, fiber_target)
+                        st.markdown(f"""
+                            <div style="margin-bottom: 10px;">
+                                <div style="font-size: 14px; margin-bottom: 4px;">Fiber: {fiber_actual:.0f}g / {fiber_target:.0f}g</div>
+                                <div style="background: #374151; border-radius: 4px; height: 8px;">
+                                    <div style="background: {fiber_color}; width: {fiber_pct}%; height: 100%; border-radius: 4px;"></div>
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
 
                     with col2:
                         if selected_meal['inventory_impact']:
@@ -172,10 +238,10 @@ def render_meal_plan(conn, user_id):
                         fiber = 0
                         if meal['nutrition']:
                             nut = json.loads(meal['nutrition'])
-                            calories = nut.get('calories', 0)
-                            protein = nut.get('protein_g', 0)
-                            fat = nut.get('fat_g', 0)
-                            fiber = nut.get('fiber_g', 0)
+                            calories = float(nut.get('calories') or 0)
+                            protein = float(nut.get('protein_g') or 0)
+                            fat = float(nut.get('fat_g') or 0)
+                            fiber = float(nut.get('fiber_g') or 0)
 
                         row = {
                             "Type": meal['meal_type'].title(),
@@ -201,38 +267,94 @@ def render_meal_plan(conn, user_id):
                             "difficulty_level": meal['difficulty_level']
                         }
 
-                    # Display interactive table
-                    st.subheader("📅 Daily Schedule")
+                    # Display selectable table
+                    st.subheader("🍴 Today's Meals")
+                    st.caption("👆 Click a row to view the recipe")
                     df = pd.DataFrame(table_data)
                     
-                    # Configure column config
-                    column_config = {
-                        "Type": st.column_config.TextColumn("Type", width="small"),
-                        "Meal Name": st.column_config.TextColumn("Meal Name", width="large"),
-                        "Calories": st.column_config.NumberColumn("Calories", format="%s kcal"),
-                        "Protein (g)": st.column_config.NumberColumn("Protein", format="%s g"),
-                        "Fat (g)": st.column_config.NumberColumn("Fat", format="%s g"),
-                        "Fiber (g)": st.column_config.NumberColumn("Fiber", format="%s g"),
-                    }
-
                     event = st.dataframe(
                         df,
-                        column_config=column_config,
+                        column_config={
+                            "Type": st.column_config.TextColumn("Type", width="small"),
+                            "Meal Name": st.column_config.TextColumn("Meal Name", width="large"),
+                            "Calories": st.column_config.TextColumn("Calories"),
+                            "Protein (g)": st.column_config.TextColumn("Protein"),
+                            "Fat (g)": st.column_config.TextColumn("Fat"),
+                            "Fiber (g)": st.column_config.TextColumn("Fiber"),
+                        },
                         use_container_width=True,
                         hide_index=True,
                         on_select="rerun",
                         selection_mode="single-row",
-                        key=f"df_{meal_id}" # Unique key per tab
+                        key=f"meals_table_{meal_id}"
                     )
-
-                    # Handle selection
+                    
+                    # Show recipe when row is selected
                     if event.selection.rows:
                         selected_index = event.selection.rows[0]
                         selected_row = df.iloc[selected_index]
-                        meal_key = f"{selected_row['Type'].lower()}_{selected_row['Meal Name']}"
+                        meal_type = selected_row['Type'].lower()
+                        meal_key = f"{meal_type}_{selected_row['Meal Name']}"
                         
                         if meal_key in meal_map:
-                            show_meal_details(meal_map[meal_key])
+                            meal_info = meal_map[meal_key]
+                            
+                            st.markdown("---")
+                            st.markdown(f"### 📖 Recipe: {selected_row['Meal Name']}")
+                            
+                            # Prep and cook time
+                            time_col1, time_col2, time_col3 = st.columns(3)
+                            with time_col1:
+                                st.metric("⏱️ Prep Time", f"{meal_info.get('preparation_time', 0)} min")
+                            with time_col2:
+                                st.metric("🍳 Cook Time", f"{meal_info.get('cooking_time', 0)} min")
+                            with time_col3:
+                                st.metric("🍽️ Servings", meal_info.get('servings', 1))
+                            
+                            # Ingredients
+                            st.markdown("**🥗 Ingredients**")
+                            ingredients = meal_info.get('ingredients_with_quantities', [])
+                            if isinstance(ingredients, str):
+                                ingredients = json.loads(ingredients)
+                            if ingredients:
+                                ing_cols = st.columns(2)
+                                for idx, ing in enumerate(ingredients):
+                                    qty = ing.get('quantity', '')
+                                    unit = ing.get('unit', '')
+                                    name = ing.get('ingredient', '')
+                                    with ing_cols[idx % 2]:
+                                        st.markdown(f"• {qty} {unit} {name}")
+                            
+                            # Recipe steps
+                            recipe = meal_info.get('recipe', {})
+                            if isinstance(recipe, str):
+                                recipe = json.loads(recipe)
+                            
+                            if recipe:
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    # Prep steps
+                                    prep_steps = recipe.get('prep_steps', [])
+                                    if prep_steps:
+                                        st.markdown("**📝 Preparation**")
+                                        for i, step in enumerate(prep_steps, 1):
+                                            st.markdown(f"{i}. {step}")
+                                
+                                with col2:
+                                    # Cooking instructions
+                                    cooking = recipe.get('cooking_instructions', [])
+                                    if cooking:
+                                        st.markdown("**👨‍🍳 Cooking Instructions**")
+                                        for i, step in enumerate(cooking, 1):
+                                            st.markdown(f"{i}. {step}")
+                                
+                                # Tips
+                                tips = recipe.get('tips', [])
+                                if tips:
+                                    st.markdown("**💡 Tips**")
+                                    for tip in tips:
+                                        st.info(tip)
                     
                     # Meal Feedback Section
                     st.divider()
