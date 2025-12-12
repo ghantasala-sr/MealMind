@@ -1,0 +1,12 @@
+snowflake-snowpark-python
+python-dotenv
+pandas
+langchain
+langchain-community
+langgraph
+pydantic
+langchain-snowflake>=0.2.2
+requests
+zstandard
+streamlit
+snowflake-connector-python

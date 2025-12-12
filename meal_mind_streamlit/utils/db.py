@@ -792,34 +792,74 @@ def get_meal_plan_overview(_conn, user_id, specific_plan_id=None):
             """, (specific_plan_id, user_id))
         else:
             cursor.execute("""
-                SELECT p.plan_id,
-                       p.plan_name,
-                       p.start_date,
-                       p.end_date,
                        p.week_summary,
                        p.created_at,
                        p.status
                 FROM meal_plans p
-                WHERE p.user_id = %s
-                ORDER BY 
-                    CASE 
-                        WHEN CURRENT_DATE() BETWEEN p.start_date AND p.end_date THEN 1 
-                        ELSE 2 
-                    END,
-                    p.created_at DESC 
+                WHERE p.user_id = %s AND p.status = 'ACTIVE'
+                ORDER BY p.created_at DESC
                 LIMIT 1
             """, (user_id,))
         
         row = cursor.fetchone()
         if row:
-            columns = [col[0].lower() for col in cursor.description]
-            return dict(zip(columns, row))
+            # week_summary is a VARIANT (JSON)
+            week_summary_json = row[4]
+            if isinstance(week_summary_json, str):
+                try:
+                    week_summary = json.loads(week_summary_json)
+                except:
+                    week_summary = week_summary_json
+            else:
+                week_summary = week_summary_json
+
+            return {
+                "plan_id": row[0],
+                "plan_name": row[1],
+                "start_date": row[2],
+                "end_date": row[3],
+                "week_summary": week_summary,
+                "created_at": row[5],
+                "status": row[6]
+            }
         return None
     except Exception as e:
-        st.error(f"Error fetching meal plan overview: {e}")
+        st.error(f"Error fetching meal plan: {e}")
         return None
     finally:
         cursor.close()
+
+
+@st.cache_data(ttl=60)
+def get_meal_plan_history(_conn, user_id, limit=5):
+    """Fetch recent meal plans for history selection"""
+    try:
+        cursor = _conn.cursor()
+        cursor.execute("""
+            SELECT plan_id, plan_name, start_date, end_date, status, created_at
+            FROM meal_plans
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+        """, (user_id, limit))
+        
+        plans = []
+        for row in cursor.fetchall():
+            plans.append({
+                "plan_id": row[0],
+                "plan_name": row[1],
+                "start_date": row[2],
+                "end_date": row[3],
+                "status": row[4],
+                "created_at": row[5]
+            })
+        return plans
+    except Exception as e:
+        st.error(f"Error fetching plan history: {e}")
+        return []
+    finally:
+        cursor.close()
+
 
 def get_future_meal_plan(_conn, user_id):
     """Check if a future meal plan exists"""

@@ -289,6 +289,10 @@ class MealRouterAgent:
             - DISTINGUISH BETWEEN HYPOTHETICALS AND ACTIONS:
               - "How about adding garlic?", "What if I add cheese?", "Can I add nuts?" -> Use "general_chat" or "calorie_estimation" to discuss the change.
               - "Add garlic to my lunch", "Update lunch with garlic", "I ate garlic" -> CHECK FOR CONFIRMATION.
+            - HANDLING PREFERENCES:
+              - If the user states a preference (e.g., "I like mushrooms", "I hate onions", "I prefer spicy food"), DO NOT generate a "meal_adjustment".
+              - Use "general_chat" to acknowledge the preference. The system will automatically learn it for future plans.
+              - Do NOT ask if they want to update the current plan unless they explicitly asked to "add" or "use" it now.
             - CONFIRMATION RULE (STRICT):
               - Before generating a "meal_adjustment" action, check the CHAT HISTORY.
               - If the user has NOT explicitly confirmed (e.g., "Yes", "Do it", "Confirm") in the last message, you MUST output a "general_chat" action with the query: "Please ask the user to confirm if they want to update their [meal]."
@@ -428,6 +432,8 @@ class MealRouterAgent:
         
         return state
 
+
+
     def node_retrieve_meals(self, state: ChatRouterState) -> ChatRouterState:
         """Retrieve meal data"""
         from utils.db import get_meals_by_criteria
@@ -503,7 +509,8 @@ TOOLS AVAILABLE:
 1. search_foods(query: str): Search for nutritional information about specific foods. Use this when you need to know calories, macros, or ingredients for a food item that is not in the context.
 
 INSTRUCTIONS:
-- YOU MUST ALWAYS USE the `search_foods` tool. NO EXCEPTIONS.
+- Use the `search_foods` tool to retrieve nutritional information. Without Exception use this, At maximum, you can use this tool 20 times.
+- IF you have already received tool outputs containing the necessary information, DO NOT call the tool again. Proceed to generate the final response.
 - **COMPOSITE DISHES (e.g., "Paneer Burji", "Chicken Sandwich"):**
   - Do NOT just search for the full dish name.
   - BREAK IT DOWN into main ingredients.
@@ -603,9 +610,18 @@ TODAY'S DATE: {current_date_str}
 
 USER PROFILE:
 - Name: {user_profile.get('username', 'User')}
+- Age: {user_profile.get('age', 'N/A')}
+- Gender: {user_profile.get('gender', 'N/A')}
 - Goal: {user_profile.get('health_goal', 'General Health')}
 - Dietary Restrictions: {user_profile.get('dietary_restrictions', 'None')}
 - Allergies: {user_profile.get('food_allergies', 'None')}
+
+DAILY NUTRITIONAL TARGETS (DRI):
+- Calories: {user_profile.get('daily_calories', 'N/A')} kcal
+- Protein: {user_profile.get('daily_protein', 'N/A')}g
+- Carbs: {user_profile.get('daily_carbohydrate', 'N/A')}g
+- Fat: {user_profile.get('daily_fat', 'N/A')}g
+- Fiber: {user_profile.get('daily_fiber', 'N/A')}g
 
 USER PREFERENCES (LEARNED):
 {pref_text}

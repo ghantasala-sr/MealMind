@@ -2,50 +2,238 @@ import streamlit as st
 import json
 
 def apply_custom_css():
-    """Apply custom CSS styles"""
+    """Apply custom CSS styles with a premium, modern aesthetic"""
     st.markdown("""
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    
     <style>
-        .meal-card {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            color: #31333F;
+        :root {
+            /* BRAND PALETTE */
+            
+            /* Primary Brand: Deep Forest Green (Text & Headers) */
+            --primary-color: #2D4A3E; 
+            --primary-hover: #1F332B; 
+            
+            /* Action Color: Terracotta/Burnt Orange (Buttons/Badges) */
+            --secondary-color: #E65100;
+            --action-color: #D84315; 
+            
+            /* Backgrounds: Warm Cream/Ivory */
+            --bg-color: #FFF8E7; 
+            --surface-color: #FEFDF5; /* Soft Off-White */
+            
+            /* Typography */
+            --text-primary: #2D4A3E; /* Deep Forest Green */
+            --text-secondary: #4A5D53; /* Muted Green-Gray */
+            --border-color: #E0DCCD;
+            
+            /* Accents */
+            --accent-green: #558B2F; /* Leaf Green */
+            --accent-red: #C62828; /* Strawberry Red */
+            
+            /* Shadows */
+            --shadow-sm: 0 1px 2px 0 rgba(45, 74, 62, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(45, 74, 62, 0.1), 0 2px 4px -1px rgba(45, 74, 62, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(45, 74, 62, 0.1), 0 4px 6px -2px rgba(45, 74, 62, 0.05);
+        }
+        /* Global Typography - FORCE COLOR OVERRIDES */
+        html, body, [class*="css"], .stMarkdown, .stText, p, .stTextInput, .stButton {
+            font-family: 'Outfit', sans-serif !important;
+            color: var(--text-primary) !important;
+        }
+        /* Headers */
+        h1, h2, h3, h4, h5, h6, .stHeading {
+            font-family: 'Outfit', sans-serif !important;
+            font-weight: 700;
+            color: var(--text-primary) !important;
+        }
+        
+        /* Input Labels */
+        .stTextInput label, .stSelectbox label, .stNumberInput label {
+            color: var(--text-secondary) !important;
+            font-weight: 600;
+        }
+        /* Main App Background */
+        .stApp {
+            background-color: var(--bg-color);
+            background-image: radial-gradient(#F3E5AB 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        
+        /* Streamlit Container Adjustments */
+        .block-container {
+            padding-top: 3rem;
+            padding-bottom: 3rem;
+        }
+        /* Cards & Containers */
+        .stCard, .meal-card {
+            background-color: var(--surface-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .meal-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
         }
         .meal-card h4 {
-            color: #31333F !important;
+            color: var(--text-primary) !important;
             margin: 0;
         }
-        .nutrition-badge {
-            display: inline-block;
-            padding: 5px 10px;
-            margin: 2px;
-            background-color: #e9ecef;
-            border-radius: 15px;
-            font-size: 12px;
-            color: #31333F;
-        }
-        .recipe-step {
-            padding: 8px;
-            margin: 5px 0;
-            background-color: #ffffff;
-            border-left: 3px solid #007bff;
-            color: #31333F;
-        }
+        /* Inventory Items */
         .inventory-item {
-            background-color: #f0f2f5;
-            padding: 10px;
-            border-radius: 8px;
-            margin: 5px 0;
-            color: #31333F;
+            background-color: var(--surface-color);
+            border-left: 4px solid var(--primary-color);
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 6px;
+            box-shadow: var(--shadow-sm);
         }
+        /* Badges & Tags */
+        .nutrition-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            margin: 2px;
+            background-color: #EEF2FF;
+            color: var(--primary-color);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border: 1px solid #E0E7FF;
+        }
+        /* Standard Buttons (Secondary/Outline) - Reset to Light Style */
+        .stButton > button {
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.2s;
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            background-color: var(--surface-color) !important;
+            color: var(--text-primary) !important;
+            box-shadow: var(--shadow-sm); 
+        }
+        .stButton > button:hover {
+            border-color: var(--action-color);
+            color: var(--action-color) !important;
+            background-color: #FFF3E0 !important;
+            transform: translateY(-1px);
+        }
+        
+        /* PRIMARY Action Buttons (Login, Next, Save) - FORCE ORANGE */
+        div[data-testid="stButton"] button[kind="primary"],
+        div[data-testid="stFormSubmitButton"] > button {
+            background-color: var(--action-color) !important;
+            color: white !important; 
+            box-shadow: 0 4px 6px rgba(216, 67, 21, 0.2);
+            font-weight: 600;
+            border: none;
+        }
+        
+        div[data-testid="stButton"] button[kind="primary"]:hover,
+        div[data-testid="stFormSubmitButton"] > button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+            background-color: #BF360C !important;
+            color: white !important;
+        }
+        /* Dataframe Header Styling */
+        [data-testid="stDataFrame"] thead th {
+             background-color: var(--action-color) !important;
+             color: white !important;
+        }
+        
+        /* Force remove any borders from dataframe */
+        [data-testid="stDataFrame"] {
+            border: none !important;
+            box-shadow: none !important;
+        }
+        
+        /* Force Sidebar to be Cream */
+        section[data-testid="stSidebar"] {
+            background-color: var(--bg-color) !important;
+        }
+        
+        /* Inputs */
+        .stTextInput > div > div > input {
+            border-radius: 8px;
+            border-color: var(--border-color);
+            padding: 10px;
+            background-color: var(--surface-color);
+            color: var(--text-primary);
+        }
+        .stTextInput > div > div > input:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 1px var(--primary-color);
+        }
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 20px;
+            border-bottom: 2px solid var(--border-color);
+            background-color: transparent;
+        }
+        .stTabs [data-baseweb="tab"] {
+            height: 50px;
+            white-space: pre-wrap;
+            border-radius: 8px 8px 0 0;
+            gap: 1px;
+            padding: 0px 20px;
+            font-weight: 600;
+            font-family: 'Outfit', sans-serif;
+            color: var(--text-secondary);
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: transparent;
+            color: var(--primary-color);
+            border-bottom: 4px solid var(--primary-color);
+        }
+        /* Recipe Steps */
+        .recipe-step {
+            display: flex;
+            align-items: flex-start;
+            padding: 12px;
+            margin: 8px 0;
+            background-color: var(--bg-color);
+            border-radius: 8px;
+            border-left: 3px solid #8B5CF6;
+        }
+        /* Metrics */
+        [data-testid="stMetricValue"] {
+            font-family: 'Outfit', sans-serif;
+            color: var(--primary-color);
+        }
+        /* Chat Messages */
+        .chat-message-user {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 12px 12px 0 12px;
+            margin: 8px 0;
+            max-width: 80%;
+            margin-left: auto;
+        }
+        .chat-message-ai {
+            background-color: white;
+            border: 1px solid var(--border-color);
+            padding: 12px 16px;
+            border-radius: 12px 12px 12px 0;
+            margin: 8px 0;
+            max-width: 80%;
+            margin-right: auto;
+            box-shadow: var(--shadow-sm);
+        }
+        /* Progress Indicator */
         .progress-indicator {
             padding: 10px;
             background-color: #e7f3ff;
             border-radius: 5px;
             margin: 10px 0;
-            color: #31333F;
+            color: var(--text-primary);
         }
     </style>
     """, unsafe_allow_html=True)
