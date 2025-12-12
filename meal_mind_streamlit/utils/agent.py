@@ -259,22 +259,157 @@ class MealPlanAgentWithExtraction:
 
     # ==================== LANGGRAPH NODES ====================
     def node_generate_plan(self, state: MealPlanState) -> MealPlanState:
-        """Node 1: Generate the core meal plan"""
-        print("--- Node: Generate Meal Plan ---")
+        """Node 1: Generate the core meal plan using batched generation"""
+        print("--- Node: Generate Meal Plan (Batched) ---")
         try:
-            prompt = state['prompt']
+            # We ignore state['prompt'] here because we generate new prompts for batches
             user_profile = state['user_profile']
+            inventory_df = state['inventory_df']
+            
+            from utils.helpers import generate_comprehensive_meal_plan_prompt
             
             if self.agent:
-                response = self.agent.invoke({"input": prompt})
-                raw_response = self.process_agent_response(response)
-                meal_plan_data = self.extract_json_from_response(raw_response)
+                # Batch 1: Days 1-4
+                print("Generating Batch 1 (Days 1-4)...")
+                prompt_1 = generate_comprehensive_meal_plan_prompt(user_profile, inventory_df, start_day=1, num_days=4)
+                response_1 = self.agent.invoke({"input": prompt_1})
+                raw_1 = self.process_agent_response(response_1)
+                print(f"DEBUG: Batch 1 Raw Response:\n{raw_1[:500]}...") # Print first 500 chars
+                data_1 = self.extract_json_from_response(raw_1)
+                print(f"DEBUG: Batch 1 Parsed Data: {json.dumps(data_1, indent=2) if data_1 else 'None'}")
                 
-                if meal_plan_data and self.validate_meal_plan_structure(meal_plan_data):
-                    meal_plan_data = self.fix_day_names_in_plan(meal_plan_data)
-                    state['meal_plan_json'] = meal_plan_data
+                # Extract context from Batch 1
+                context_str = ""
+                if data_1:
+                    try:
+                        planned_meals = []
+                        days = data_1.get('meal_plan', {}).get('days', [])
+                        for day in days:
+                            meals = day.get('meals', {})
+                            for m_type, m_data in meals.items():
+                                if isinstance(m_data, dict) and 'meal_name' in m_data:
+                                    planned_meals.append(f"{m_data['meal_name']} ({m_type})")
+                        
+                        if planned_meals:
+                            context_str += "Meals planned so far:\n- " + "\n- ".join(planned_meals)
+                    except Exception as e:
+                        print(f"Error extracting context: {e}")
+
+                # Batch 2: Days 5-7
+                print("Generating Batch 2 (Days 5-7)...")
+                prompt_2 = generate_comprehensive_meal_plan_prompt(
+                    user_profile, 
+                    inventory_df, 
+                    start_day=5, 
+                    num_days=3, 
+                    previous_plan_context=context_str
+                )
+                response_2 = self.agent.invoke({"input": prompt_2})
+                raw_2 = self.process_agent_response(response_2)
+                print(f"DEBUG: Batch 2 Raw Response:\n{raw_2[:500]}...") # Print first 500 chars
+                data_2 = self.extract_json_from_response(raw_2)
+                print(f"DEBUG: Batch 2 Parsed Data: {json.dumps(data_2, indent=2) if data_2 else 'None'}")
+                
+                # Merge Results
+                if data_1 and data_2:
+                    merged_plan = data_1
+                    
+                    # Ensure structure exists in batch 2
+                    days_2 = data_2.get('meal_plan', {}).get('days', [])
+                    
+                    # Append days from batch 2 to batch 1
+                    if 'meal_plan' in merged_plan and 'days' in merged_plan['meal_plan']:
+                        merged_plan['meal_plan']['days'].extend(days_2)
+                        
+                    # Merge shopping lists with quantity summation
+                    try:
+                        sl_1 = merged_plan.get('recommendations', {}).get('shopping_list_summary', {})
+                        sl_2 = data_2.get('recommendations', {}).get('shopping_list_summary', {})
+                        
+                        if sl_1 and sl_2:
+                            for category in ['proteins', 'produce', 'pantry', 'grains', 'vegetables', 'fruits', 'dairy_alternatives']:
+                                if category in sl_2:
+                                    if category not in sl_1:
+                                        sl_1[category] = []
+                                    
+                                    # Create a map of existing items for easy lookup
+                                    existing_items = {item['item'].lower(): item for item in sl_1[category] if 'item' in item}
+                                    
+                                    for new_item in sl_2[category]:
+                                        if 'item' not in new_item:
+                                            continue
+                                            
+                                        name = new_item['item'].lower()
+                                        if name in existing_items:
+                                            # Update quantity if units match (simple check)
+                                            existing = existing_items[name]
+                                            # Try to sum quantities if they are numbers
+                                            try:
+                                                q1 = float(existing.get('quantity_to_purchase', 0))
+                                                q2 = float(new_item.get('quantity_to_purchase', 0))
+                                                existing['quantity_to_purchase'] = q1 + q2
+                                                
+                                                # Also sum total needed
+                                                t1 = float(existing.get('total_quantity_needed', 0))
+                                                t2 = float(new_item.get('total_quantity_needed', 0))
+                                                existing['total_quantity_needed'] = t1 + t2
+                                            except:
+                                                pass # Keep original if parsing fails
+                                        else:
+                                            # Add new item
+                                            sl_1[category].append(new_item)
+                                            existing_items[name] = new_item
+                            
+                            # Sum totals
+                            sl_1['total_estimated_cost'] = float(sl_1.get('total_estimated_cost', 0)) + float(sl_2.get('total_estimated_cost', 0))
+                            sl_1['total_items_from_inventory'] = int(sl_1.get('total_items_from_inventory', 0)) + int(sl_2.get('total_items_from_inventory', 0))
+                            sl_1['total_items_to_purchase'] = int(sl_1.get('total_items_to_purchase', 0)) + int(sl_2.get('total_items_to_purchase', 0))
+                    except Exception as e:
+                        print(f"Error merging shopping lists: {e}")
+                        
+                    # Recalculate Week Summary (Averages & Utilization)
+                    try:
+                        all_days = merged_plan.get('meal_plan', {}).get('days', [])
+                        week_summary = merged_plan.get('meal_plan', {}).get('week_summary', {})
+                        
+                        if all_days:
+                            # Recalculate Nutritional Averages
+                            total_cals = sum(float(d.get('total_nutrition', {}).get('calories', 0)) for d in all_days)
+                            total_prot = sum(float(d.get('total_nutrition', {}).get('protein_g', 0)) for d in all_days)
+                            total_carbs = sum(float(d.get('total_nutrition', {}).get('carbohydrates_g', 0)) for d in all_days)
+                            total_fat = sum(float(d.get('total_nutrition', {}).get('fat_g', 0)) for d in all_days)
+                            total_fiber = sum(float(d.get('total_nutrition', {}).get('fiber_g', 0)) for d in all_days)
+                            
+                            num_days = len(all_days)
+                            week_summary['average_daily_calories'] = int(total_cals / num_days)
+                            week_summary['average_daily_protein'] = round(total_prot / num_days, 1)
+                            week_summary['average_daily_carbs'] = round(total_carbs / num_days, 1)
+                            week_summary['average_daily_fat'] = round(total_fat / num_days, 1)
+                            week_summary['average_daily_fiber'] = round(total_fiber / num_days, 1)
+                            
+                            # Recalculate Inventory Utilization
+                            # Utilization = (Items Used / Total Inventory Items) * 100
+                            total_inventory_count = len(inventory_df) if not inventory_df.empty else 0
+                            items_used_count = int(merged_plan.get('recommendations', {}).get('shopping_list_summary', {}).get('total_items_from_inventory', 0))
+                            
+                            if total_inventory_count > 0:
+                                utilization_rate = (items_used_count / total_inventory_count) * 100
+                                week_summary['inventory_utilization_rate'] = round(min(utilization_rate, 100), 1)
+                            else:
+                                week_summary['inventory_utilization_rate'] = 0
+                                
+                    except Exception as e:
+                        print(f"Error recalculating week summary: {e}")
+                        
+                    # Validate merged structure
+                    if self.validate_meal_plan_structure(merged_plan):
+                        merged_plan = self.fix_day_names_in_plan(merged_plan)
+                        state['meal_plan_json'] = merged_plan
+                    else:
+                        state['error'] = "Merged meal plan structure is invalid"
                 else:
-                    state['error'] = "Failed to parse meal plan JSON"
+                     state['error'] = "Failed to generate one of the batches"
+                     
             else:
                 # Fallback to mock
                 state['meal_plan_json'] = self.generate_mock_meal_plan(user_profile)
@@ -457,34 +592,41 @@ class MealPlanAgentWithExtraction:
 
     def create_sample_meal(self, meal_type: str, user_profile: Dict) -> Dict:
         """Create a sample meal based on type"""
+        import random
+        
         meal_templates = {
-            "breakfast": {
-                "name": "Protein Oatmeal Bowl",
-                "prep": 5, "cook": 10,
-                "calories": int(user_profile['daily_calories'] * 0.25),
-                "protein": int(user_profile['daily_protein'] * 0.25)
-            },
-            "lunch": {
-                "name": "Grilled Chicken Salad",
-                "prep": 15, "cook": 15,
-                "calories": int(user_profile['daily_calories'] * 0.35),
-                "protein": int(user_profile['daily_protein'] * 0.35)
-            },
-            "snacks": {
-                "name": "Greek Yogurt with Berries",
-                "prep": 2, "cook": 0,
-                "calories": int(user_profile['daily_calories'] * 0.10),
-                "protein": int(user_profile['daily_protein'] * 0.10)
-            },
-            "dinner": {
-                "name": "Baked Salmon with Vegetables",
-                "prep": 15, "cook": 25,
-                "calories": int(user_profile['daily_calories'] * 0.30),
-                "protein": int(user_profile['daily_protein'] * 0.30)
-            }
+            "breakfast": [
+                {"name": "Protein Oatmeal Bowl", "prep": 5, "cook": 10, "calories": 0.25, "protein": 0.25},
+                {"name": "Spinach & Feta Omelet", "prep": 10, "cook": 10, "calories": 0.25, "protein": 0.25},
+                {"name": "Greek Yogurt Parfait", "prep": 5, "cook": 0, "calories": 0.25, "protein": 0.25},
+                {"name": "Avocado Toast with Eggs", "prep": 5, "cook": 5, "calories": 0.25, "protein": 0.25}
+            ],
+            "lunch": [
+                {"name": "Grilled Chicken Salad", "prep": 15, "cook": 15, "calories": 0.35, "protein": 0.35},
+                {"name": "Turkey Wrap", "prep": 10, "cook": 0, "calories": 0.35, "protein": 0.35},
+                {"name": "Quinoa & Black Bean Bowl", "prep": 15, "cook": 20, "calories": 0.35, "protein": 0.35},
+                {"name": "Tuna Salad Sandwich", "prep": 10, "cook": 0, "calories": 0.35, "protein": 0.35}
+            ],
+            "snacks": [
+                {"name": "Greek Yogurt with Berries", "prep": 2, "cook": 0, "calories": 0.10, "protein": 0.10},
+                {"name": "Apple slices with Almond Butter", "prep": 2, "cook": 0, "calories": 0.10, "protein": 0.10},
+                {"name": "Protein Shake", "prep": 2, "cook": 0, "calories": 0.10, "protein": 0.10},
+                {"name": "Handful of Almonds", "prep": 0, "cook": 0, "calories": 0.10, "protein": 0.10}
+            ],
+            "dinner": [
+                {"name": "Baked Salmon with Vegetables", "prep": 15, "cook": 25, "calories": 0.30, "protein": 0.30},
+                {"name": "Lean Beef Stir-Fry", "prep": 20, "cook": 15, "calories": 0.30, "protein": 0.30},
+                {"name": "Chicken Breast with Sweet Potato", "prep": 10, "cook": 30, "calories": 0.30, "protein": 0.30},
+                {"name": "Vegetable Curry with Tofu", "prep": 20, "cook": 20, "calories": 0.30, "protein": 0.30}
+            ]
         }
 
-        template = meal_templates.get(meal_type, meal_templates["lunch"])
+        options = meal_templates.get(meal_type, meal_templates["lunch"])
+        template = random.choice(options)
+        
+        # Calculate actual values
+        cal_val = int(user_profile['daily_calories'] * template['calories'])
+        prot_val = int(user_profile['daily_protein'] * template['protein'])
 
         return {
             "meal_name": template["name"],
@@ -500,10 +642,10 @@ class MealPlanAgentWithExtraction:
             "preparation_time": template["prep"],
             "cooking_time": template["cook"],
             "nutrition": {
-                "calories": template["calories"],
-                "protein_g": template["protein"],
-                "carbohydrates_g": template["calories"] * 0.5 / 4,
-                "fat_g": template["calories"] * 0.3 / 9,
+                "calories": cal_val,
+                "protein_g": prot_val,
+                "carbohydrates_g": cal_val * 0.5 / 4,
+                "fat_g": cal_val * 0.3 / 9,
                 "fiber_g": 8
             },
             "serving_size": "1 serving",
