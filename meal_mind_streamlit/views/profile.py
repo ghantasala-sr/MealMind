@@ -121,8 +121,14 @@ def render_profile(conn, user_id):
     
     # Learned Preferences Section
     st.divider()
-    st.header("🧠 Learned Preferences")
-    st.caption("Automatically tracked from your conversations")
+    
+    pref_col1, pref_col2 = st.columns([4, 1])
+    with pref_col1:
+        st.header("🧠 Learned Preferences")
+        st.caption("Automatically tracked from your conversations")
+    with pref_col2:
+        if st.button("🔄 Refresh", key="refresh_preferences"):
+            st.rerun()
     
     # Get feedback agent
     session = get_snowpark_session()

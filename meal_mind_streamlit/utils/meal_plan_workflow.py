@@ -21,6 +21,30 @@ from utils.agent import MealPlanAgentWithExtraction
 from utils.feedback_agent import FeedbackAgent
 
 
+# ==================== HELPER FUNCTION ====================
+def fix_day_names_with_start_date(meal_plan_data: Dict[str, Any], start_date) -> Dict[str, Any]:
+    """Fix day names in meal plan to match actual dates starting from start_date"""
+    try:
+        days = meal_plan_data.get('meal_plan', {}).get('days', [])
+        # Use provided start_date or default to today
+        base_date = start_date if start_date else datetime.now().date()
+        # Handle if start_date is a datetime object instead of date
+        if hasattr(base_date, 'date'):
+            base_date = base_date.date()
+        for i, day_data in enumerate(days):
+            # Calculate the actual date for this day
+            current_date = base_date + timedelta(days=i)
+            # Get the correct day name from the date
+            correct_day_name = current_date.strftime('%A')
+            # Update the day_name in the data
+            day_data['day_name'] = correct_day_name
+            day_data['day'] = i + 1
+        return meal_plan_data
+    except Exception as e:
+        print(f"Could not fix day names: {e}")
+        return meal_plan_data
+
+
 # ==================== STATE DEFINITION ====================
 class MealPlanGenerationState(TypedDict):
     """State tracking for meal plan generation workflow"""
@@ -379,7 +403,7 @@ class MealPlanWorkflow:
                         
                     # Validate merged structure
                     if agent.validate_meal_plan_structure(merged_plan):
-                        merged_plan = agent.fix_day_names_in_plan(merged_plan, start_date=start_date_obj)
+                        merged_plan = fix_day_names_with_start_date(merged_plan, start_date_obj)
                     else:
                         print("Merged meal plan structure is invalid")
                         merged_plan = None
