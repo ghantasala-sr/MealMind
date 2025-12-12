@@ -98,6 +98,15 @@ The app will open in your default web browser at `http://localhost:8501`.
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+### Forking and Syncing
+
+If you've forked this repository and want to keep it up-to-date:
+
+1. **Use GitHub's Sync Fork button**: On your fork's GitHub page, click "Sync fork" → "Update branch"
+2. **Or use Git commands**: See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed instructions
+
+For complete contribution guidelines, including development setup and best practices, please refer to [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## 📄 License
 
 [MIT License](LICENSE)
