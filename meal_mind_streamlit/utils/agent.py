@@ -256,6 +256,43 @@ class MealPlanAgentWithExtraction:
         except Exception as e:
             st.error(f"Error generating suggestions: {e}")
             return []
+            
+    def consolidate_shopping_list(self, shopping_list: Dict) -> Dict:
+        """Consolidate shopping list to merge duplicates and normalize units"""
+        if not shopping_list or not self.agent:
+            return shopping_list
+            
+        print(f"Consolidating shopping list...")
+        
+        try:
+            prompt = f"""
+            Analyze and consolidate this shopping list to merge duplicate items and normalize units.
+            
+            CURRENT LIST:
+            {json.dumps(shopping_list, indent=2)}
+            
+            INSTRUCTIONS:
+            1. Merge items that are the same but named slightly differently (e.g., "Onions" vs "Onion", "2 medium" vs "40g").
+            2. If units are compatible (e.g., grams and kg, or count), sum the quantities.
+            3. If units are different and hard to convert (e.g., "bunch" vs "g"), keep the most descriptive one or try to estimate.
+            4. Ensure the output has the EXACT same JSON structure as the input (keys: proteins, produce, pantry, grains, vegetables, fruits, dairy_alternatives).
+            5. Return ONLY the JSON object.
+            """
+            
+            response = self.agent.invoke({"input": prompt})
+            raw_response = self.process_agent_response(response)
+            consolidated_list = self.extract_json_from_response(raw_response)
+            
+            if consolidated_list and isinstance(consolidated_list, dict):
+                print(f"Shopping list consolidated successfully")
+                return consolidated_list
+            else:
+                print(f"Failed to parse consolidated list, keeping original")
+                return shopping_list
+                
+        except Exception as e:
+            print(f"Error consolidating shopping list: {e}")
+            return shopping_list
 
     # ==================== LANGGRAPH NODES ====================
     def node_generate_plan(self, state: MealPlanState) -> MealPlanState:
@@ -404,6 +441,13 @@ class MealPlanAgentWithExtraction:
                     # Validate merged structure
                     if self.validate_meal_plan_structure(merged_plan):
                         merged_plan = self.fix_day_names_in_plan(merged_plan)
+                        
+                        # Consolidate shopping list
+                        if 'recommendations' in merged_plan and 'shopping_list_summary' in merged_plan['recommendations']:
+                            original_list = merged_plan['recommendations']['shopping_list_summary']
+                            consolidated = self.consolidate_shopping_list(original_list)
+                            merged_plan['recommendations']['shopping_list_summary'] = consolidated
+                            
                         state['meal_plan_json'] = merged_plan
                     else:
                         state['error'] = "Merged meal plan structure is invalid"

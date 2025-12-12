@@ -11,12 +11,34 @@ def render_meal_plan(conn, user_id):
     """Enhanced meal plan viewer"""
     st.header("🍽️ My Weekly Meal Plan")
 
-    from utils.db import get_meal_plan_overview, get_daily_meals_for_plan, get_weekly_meal_details, get_future_meal_plan
+    from utils.db import get_meal_plan_overview, get_daily_meals_for_plan, get_weekly_meal_details, get_future_meal_plan, get_meal_plan_history
     
     # Check for future plan
     future_plan = get_future_meal_plan(conn, user_id)
     view_plan_id = None
     
+    # History Selection
+    col_hist1, col_hist2 = st.columns([0.7, 0.3])
+    with col_hist2:
+        history = get_meal_plan_history(conn, user_id)
+        if history:
+            # Format options for dropdown
+            plan_options = {p['plan_id']: f"{p['start_date'].strftime('%b %d')} - {p['end_date'].strftime('%b %d')}" for p in history}
+            
+            # Find current active plan to set as default
+            active_plan_id = next((p['plan_id'] for p in history if p['status'] == 'ACTIVE'), None)
+            
+            selected_plan_id = st.selectbox(
+                "📅 Select Week",
+                options=list(plan_options.keys()),
+                format_func=lambda x: plan_options[x],
+                index=list(plan_options.keys()).index(active_plan_id) if active_plan_id in plan_options else 0,
+                key="history_selector"
+            )
+            
+            if selected_plan_id:
+                view_plan_id = selected_plan_id
+
     if future_plan:
         if st.session_state.get('viewing_future_plan'):
             st.success(f"📅 Viewing Future Plan (Starts {future_plan['start_date'].strftime('%B %d')})")
@@ -45,7 +67,7 @@ def render_meal_plan(conn, user_id):
     plan_name = active_plan['plan_name']
     start_date = active_plan['start_date']
     end_date = active_plan['end_date']
-    week_summary = json.loads(active_plan['week_summary']) if active_plan['week_summary'] else {}
+    week_summary = active_plan['week_summary'] if active_plan['week_summary'] else {}
 
     # Header
     col1, col2, col3 = st.columns([3, 2, 1])
@@ -172,10 +194,10 @@ def render_meal_plan(conn, user_id):
                         fiber = 0
                         if meal['nutrition']:
                             nut = json.loads(meal['nutrition'])
-                            calories = nut.get('calories', 0)
-                            protein = nut.get('protein_g', 0)
-                            fat = nut.get('fat_g', 0)
-                            fiber = nut.get('fiber_g', 0)
+                            calories = float(nut.get('calories') or 0)
+                            protein = float(nut.get('protein_g') or 0)
+                            fat = float(nut.get('fat_g') or 0)
+                            fiber = float(nut.get('fiber_g') or 0)
 
                         row = {
                             "Type": meal['meal_type'].title(),

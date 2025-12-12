@@ -285,3 +285,6 @@ class MealAdjustmentAgent:
             
         except Exception as e:
             return {"status": "error", "message": f"Error processing request: {str(e)}"}
+            return {"status": "error", "message": f"Error processing request: {str(e)}"}
+
+

@@ -432,6 +432,8 @@ class MealRouterAgent:
         
         return state
 
+
+
     def node_retrieve_meals(self, state: ChatRouterState) -> ChatRouterState:
         """Retrieve meal data"""
         from utils.db import get_meals_by_criteria
@@ -507,7 +509,8 @@ TOOLS AVAILABLE:
 1. search_foods(query: str): Search for nutritional information about specific foods. Use this when you need to know calories, macros, or ingredients for a food item that is not in the context.
 
 INSTRUCTIONS:
-- YOU MUST ALWAYS USE the `search_foods` tool. NO EXCEPTIONS.
+- Use the `search_foods` tool to retrieve nutritional information. Without Exception use this, At maximum, you can use this tool 20 times.
+- IF you have already received tool outputs containing the necessary information, DO NOT call the tool again. Proceed to generate the final response.
 - **COMPOSITE DISHES (e.g., "Paneer Burji", "Chicken Sandwich"):**
   - Do NOT just search for the full dish name.
   - BREAK IT DOWN into main ingredients.

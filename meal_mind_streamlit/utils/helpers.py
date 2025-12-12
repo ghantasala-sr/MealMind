@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from utils.agent import MealPlanAgentWithExtraction, MealPlanState
 from utils.db import get_snowpark_session
 
-def generate_comprehensive_meal_plan_prompt(user_profile, inventory_df, start_day=1, num_days=7, previous_plan_context=None):
+def generate_comprehensive_meal_plan_prompt(user_profile, inventory_df, start_day=1, num_days=7, previous_plan_context=None, start_date_obj=None):
     """Generate comprehensive prompt for the agent"""
 
     inventory_by_category = {}
@@ -22,7 +22,8 @@ def generate_comprehensive_meal_plan_prompt(user_profile, inventory_df, start_da
             })
 
     # Calculate dates for the prompt
-    start_date = datetime.now().date() + timedelta(days=start_day-1)
+    base_date = start_date_obj if start_date_obj else datetime.now().date()
+    start_date = base_date + timedelta(days=start_day-1)
     end_date = start_date + timedelta(days=num_days-1)
     
     # Context section if provided
@@ -120,10 +121,14 @@ Return the meal plan in valid JSON format with this EXACT structure:
     return prompt
 
 
-def save_meal_plan(conn, user_id, schedule_id, meal_plan_data):
+def save_meal_plan(conn, user_id, schedule_id, meal_plan_data, start_date=None):
     """Save the generated meal plan to database"""
     cursor = conn.cursor()
     plan_id = str(uuid.uuid4())
+    
+    # Default to today if not provided (though callers should provide it)
+    if not start_date:
+        start_date = datetime.now().date()
 
     try:
         # Save main meal plan
@@ -135,9 +140,9 @@ def save_meal_plan(conn, user_id, schedule_id, meal_plan_data):
                            plan_id,
                            user_id,
                            schedule_id,
-                           f"Week of {datetime.now().strftime('%B %d, %Y')}",
-                           datetime.now().date(),
-                           datetime.now().date() + timedelta(days=7),
+                           f"Week of {start_date.strftime('%B %d, %Y')}",
+                           start_date,
+                           start_date + timedelta(days=6),
                            json.dumps({
                                **meal_plan_data.get('meal_plan', {}).get('week_summary', {}),
                                'future_suggestions': meal_plan_data.get('future_suggestions', [])
@@ -161,7 +166,7 @@ def save_meal_plan(conn, user_id, schedule_id, meal_plan_data):
                                user_id,
                                day_data.get('day', 0),
                                day_data.get('day_name', ''),
-                               datetime.now().date() + timedelta(days=day_data.get('day', 1) - 1),
+                               start_date + timedelta(days=day_data.get('day', 1) - 1),
                                json.dumps(day_data.get('total_nutrition', {})),
                                json.dumps(day_data.get('inventory_impact', {}))
                            ))
@@ -393,7 +398,7 @@ def generate_new_meal_plan(conn, user_id):
                                """, (schedule_id, user_id, tomorrow, plan_end, tomorrow + timedelta(days=5)))
 
                 # Save meal plan
-                plan_id = save_meal_plan(conn, user_id, schedule_id, meal_plan_data)
+                plan_id = save_meal_plan(conn, user_id, schedule_id, meal_plan_data, start_date=tomorrow)
 
                 if plan_id:
                     conn.commit()

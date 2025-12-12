@@ -460,7 +460,11 @@ def profile_setup_wizard(conn, user_id):
 
                             # 3. Generate Prompt
                             status.write("🧠 Crafting the perfect prompt for our AI Chef...")
-                            prompt = generate_comprehensive_meal_plan_prompt(user_profile, inventory_df)
+                            
+                            # Calculate start date (Tomorrow)
+                            tomorrow = datetime.now().date() + timedelta(days=1)
+                            
+                            prompt = generate_comprehensive_meal_plan_prompt(user_profile, inventory_df, start_date_obj=tomorrow)
 
                             # 4. Initialize Agent
                             session = get_snowpark_session()
@@ -491,7 +495,7 @@ def profile_setup_wizard(conn, user_id):
 
                                 # 6. Create Schedule
                                 schedule_id = str(uuid.uuid4())
-                                tomorrow = datetime.now().date() + timedelta(days=1)
+                                # tomorrow is already calculated above
                                 plan_end = tomorrow + timedelta(days=7)
 
                                 # Deactivate old schedules
@@ -504,7 +508,7 @@ def profile_setup_wizard(conn, user_id):
                                                """, (schedule_id, user_id, tomorrow, plan_end, tomorrow + timedelta(days=5)))
 
                                 # 7. Save Plan
-                                plan_id = save_meal_plan(conn, user_id, schedule_id, meal_plan_data)
+                                plan_id = save_meal_plan(conn, user_id, schedule_id, meal_plan_data, start_date=tomorrow)
                                 
                                 if plan_id:
                                     conn.commit()
