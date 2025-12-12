@@ -1,4 +1,5 @@
 import streamlit as st
+import re
 from dotenv import load_dotenv
 from utils.db import get_snowflake_connection
 from utils.auth import authenticate_user, create_user_account
@@ -86,8 +87,14 @@ def main():
                     if new_username and new_password:
                         if new_password != confirm_password:
                             st.error("Passwords don't match")
-                        elif len(new_password) < 6:
-                            st.error("Password must be at least 6 characters")
+                        elif len(new_password) < 8:
+                            st.error("Password must be at least 8 characters long.")
+                        elif not re.search(r"[A-Z]", new_password):
+                            st.error("Password must contain at least one uppercase letter.")
+                        elif not re.search(r"[a-z]", new_password):
+                            st.error("Password must contain at least one lowercase letter.")
+                        elif not re.search(r"[!@#$%^&*(),.?\":{}|<>]", new_password):
+                            st.error("Password must contain at least one special character (!@#$%^&*(),.?\":{}|<>).")
                         else:
                             success, result = create_user_account(conn, new_username, new_password, new_email)
                             if success:

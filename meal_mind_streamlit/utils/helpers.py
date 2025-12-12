@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from utils.agent import MealPlanAgentWithExtraction, MealPlanState
 from utils.db import get_snowpark_session
 
-def generate_comprehensive_meal_plan_prompt(user_profile, inventory_df):
+def generate_comprehensive_meal_plan_prompt(user_profile, inventory_df, start_day=1, num_days=7, previous_plan_context=None):
     """Generate comprehensive prompt for the agent"""
 
     inventory_by_category = {}
@@ -21,12 +21,26 @@ def generate_comprehensive_meal_plan_prompt(user_profile, inventory_df):
                 'unit': item['unit']
             })
 
-    prompt = f"""Generate a complete 7-day meal plan for:
+    # Calculate dates for the prompt
+    start_date = datetime.now().date() + timedelta(days=start_day-1)
+    end_date = start_date + timedelta(days=num_days-1)
+    
+    # Context section if provided
+    context_section = ""
+    if previous_plan_context:
+        context_section = f"""
+CONTEXT FROM PREVIOUS DAYS (ALREADY PLANNED):
+{previous_plan_context}
+IMPORTANT: 
+- Do NOT repeat the main meals listed above (try to offer variety).
+- Note the inventory items already used above; ensure we don't exceed available quantities if possible.
+"""
 
-IMPORTANT: Today is {datetime.now().strftime('%A, %B %d, %Y')}. 
-The meal plan should start from TODAY and continue for 7 days.
-Ensure day names match the actual calendar dates (e.g., if today is Friday, day 1 should be Friday, day 2 should be Saturday, etc.).
+    prompt = f"""Generate a detailed meal plan for {num_days} days, from Day {start_day} to Day {start_day + num_days - 1}.
 
+IMPORTANT: The plan starts on {start_date.strftime('%A, %B %d, %Y')} (Day {start_day}) and ends on {end_date.strftime('%A, %B %d, %Y')}.
+Ensure day names match these actual calendar dates.
+{context_section}
 USER PROFILE:
 - User ID: {user_profile['user_id']}
 - Age: {user_profile['age']} years
@@ -50,14 +64,58 @@ DAILY NUTRITIONAL TARGETS:
 CURRENT INVENTORY:
 {json.dumps(inventory_by_category, indent=2)}
 
-Create a detailed 7-day meal plan with complete recipes and inventory optimization.
+Create a detailed meal plan for these {num_days} days with complete recipes and inventory optimization.
 Generate plans based ONLY on available inventory where possible.
 If a critical item (like protein source) is missing from inventory, explicitly mention it as a REQUIRED PURCHASE.
-Do NOT estimate costs.
 Strictly follow dietary restrictions and allergies.
 Prioritize recipes from the user's preferred cuisines ({user_profile.get('preferred_cuisines', 'Any')}) where possible.
 
-Return the meal plan in valid JSON format."""
+Return the meal plan in valid JSON format with this EXACT structure:
+{{
+  "user_summary": {{
+    "user_id": "{user_profile['user_id']}",
+    "health_goal": "{user_profile['health_goal']}",
+    ...
+  }},
+  "meal_plan": {{
+    "week_summary": {{
+      "average_daily_calories": 0,
+      "inventory_utilization_rate": 0,
+      "future_suggestions": []
+    }},
+    "days": [
+      {{
+        "day": {start_day},
+        "day_name": "{start_date.strftime('%A')}",
+        "total_nutrition": {{ "calories": 0, "protein_g": 0, "carbohydrates_g": 0, "fat_g": 0, "fiber_g": 0 }},
+        "inventory_impact": {{ "items_used": 0, "new_purchases_needed": 0 }},
+        "meals": {{
+          "breakfast": {{
+            "meal_name": "Name",
+            "ingredients_with_quantities": [
+              {{ "ingredient": "Name", "quantity": 0, "unit": "g", "from_inventory": true/false }}
+            ],
+            "recipe": {{ "prep_steps": [], "cooking_instructions": [] }},
+            "nutrition": {{ "calories": 0, "protein_g": 0, ... }}
+          }},
+          "lunch": {{ ... }},
+          "dinner": {{ ... }},
+          "snacks": {{ ... }}
+        }}
+      }}
+    ]
+  }},
+  "recommendations": {{
+    "shopping_list_summary": {{
+      "proteins": [], "produce": [], "pantry": [],
+      "total_items_from_inventory": 0,
+      "total_items_to_purchase": 0
+    }}
+  }}
+}}
+"""
+
+    return prompt
 
     return prompt
 
@@ -150,7 +208,7 @@ def save_meal_plan(conn, user_id, schedule_id, meal_plan_data):
                                plan_id,
                                user_id,
                                json.dumps(shopping_data),
-                               shopping_data.get('total_estimated_cost', 0),
+                               float(shopping_data.get('total_estimated_cost', 0)) if isinstance(shopping_data.get('total_estimated_cost'), (int, float)) else 0.0,
                                shopping_data.get('total_items_from_inventory', 0),
                                shopping_data.get('total_items_to_purchase', 0)
                            ))

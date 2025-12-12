@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional
-from langchain_snowflake.chat_models import ChatSnowflake
+from langchain_community.chat_models import ChatSnowflakeCortex as ChatSnowflake
 from pydantic import Field
 
 class CustomChatSnowflake(ChatSnowflake):

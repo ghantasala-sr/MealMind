@@ -1,0 +1,151 @@
+[
+    {
+        "id": "nut_001",
+        "category": "Nutrition",
+        "input": "How many calories in an apple?",
+        "expected_intent": "calorie_estimation",
+        "expected_entities": {
+            "query": "apple"
+        },
+        "complexity": "Easy"
+    },
+    {
+        "id": "nut_002",
+        "category": "Nutrition",
+        "input": "Nutrition for Paneer Butter Masala",
+        "expected_intent": "calorie_estimation",
+        "expected_entities": {
+            "query": "Paneer Butter Masala"
+        },
+        "complexity": "Medium"
+    },
+    {
+        "id": "rec_001",
+        "category": "Recipe",
+        "input": "Give me a recipe for chicken curry",
+        "expected_intent": "recipe_lookup",
+        "expected_entities": {
+            "query": "chicken curry"
+        },
+        "complexity": "Medium"
+    },
+    {
+        "id": "plan_001",
+        "category": "Planning",
+        "input": "Swap lunch for a salad",
+        "expected_intent": "meal_adjustment",
+        "expected_entities": {
+            "meal_type": "lunch",
+            "new_item": "salad"
+        },
+        "complexity": "Hard"
+    },
+    {
+        "id": "gen_001",
+        "category": "General",
+        "input": "Hi, how are you?",
+        "expected_intent": "general_chat",
+        "expected_entities": {},
+        "complexity": "Easy"
+    },
+    {
+        "id": "nut_003",
+        "category": "Nutrition",
+        "input": "Is quinoa gluten-free?",
+        "expected_intent": "general_chat",
+        "expected_entities": {
+            "query": "quinoa gluten-free"
+        },
+        "complexity": "Easy"
+    },
+    {
+        "id": "nut_004",
+        "category": "Nutrition",
+        "input": "How much protein in 100g of chicken breast?",
+        "expected_intent": "calorie_estimation",
+        "expected_entities": {
+            "query": "chicken breast"
+        },
+        "complexity": "Medium"
+    },
+    {
+        "id": "rec_002",
+        "category": "Recipe",
+        "input": "How do I make overnight oats?",
+        "expected_intent": "recipe_lookup",
+        "expected_entities": {
+            "query": "overnight oats"
+        },
+        "complexity": "Easy"
+    },
+    {
+        "id": "rec_003",
+        "category": "Recipe",
+        "input": "Vegetarian pasta recipes under 500 calories",
+        "expected_intent": "recipe_lookup",
+        "expected_entities": {
+            "query": "vegetarian pasta"
+        },
+        "complexity": "Hard"
+    },
+    {
+        "id": "plan_002",
+        "category": "Planning",
+        "input": "Add a banana to my breakfast",
+        "expected_intent": "meal_adjustment",
+        "expected_entities": {
+            "meal_type": "breakfast",
+            "instruction": "Add a banana"
+        },
+        "complexity": "Medium"
+    },
+    {
+        "id": "plan_003",
+        "category": "Planning",
+        "input": "Remove coffee from dinner",
+        "expected_intent": "meal_adjustment",
+        "expected_entities": {
+            "meal_type": "dinner",
+            "instruction": "Remove coffee"
+        },
+        "complexity": "Medium"
+    },
+    {
+        "id": "plan_004",
+        "category": "Planning",
+        "input": "What is on my meal plan for today?",
+        "expected_intent": "meal_retrieval",
+        "expected_entities": {
+            "date": "today"
+        },
+        "complexity": "Easy"
+    },
+    {
+        "id": "gen_002",
+        "category": "General",
+        "input": "Can you help me lose weight?",
+        "expected_intent": "general_chat",
+        "expected_entities": {},
+        "complexity": "Medium"
+    },
+    {
+        "id": "gen_003",
+        "category": "General",
+        "input": "What are good sources of iron?",
+        "expected_intent": "general_chat",
+        "expected_entities": {
+            "query": "sources of iron"
+        },
+        "complexity": "Medium"
+    },
+    {
+        "id": "nut_005",
+        "category": "Nutrition",
+        "input": "Compare calories in white rice vs brown rice",
+        "expected_intent": "calorie_estimation",
+        "expected_entities": {
+            "query": "white rice vs brown rice"
+        },
+        "complexity": "Hard"
+    }
+]

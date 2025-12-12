@@ -83,7 +83,7 @@ def main():
     conn = get_snowflake_connection()
     
     # Create tabs
-    tab1, tab2, tab3 = st.tabs(["Generation Queue", "Nutrition Verifier", "Model Arena"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Generation Queue", "Nutrition Verifier", "Model Arena", "Automated Evals"])
     
     with tab1:
         st.header("Generation Queue & Issues")
@@ -414,6 +414,62 @@ def main():
                     
             except FileNotFoundError:
                 st.error(f"CSV file not found at `{csv_path}`. Please ensure it exists.")
+
+    with tab4:
+        st.header("🤖 Automated Evals (CI/CD)")
+        st.markdown("Track the performance of Meal Mind agents over time using daily automated runs.")
+        
+        if st.button("🔄 Refresh Evals"):
+            st.rerun()
+            
+        try:
+            # Fetch Data from Snowflake
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM EVALUATION_LOGS ORDER BY EXECUTION_DATE DESC")
+            rows = cursor.fetchall()
+            
+            if not rows:
+                st.info("No evaluation logs found. The Airflow pipeline might not have run yet.")
+            else:
+                # Convert to DataFrame
+                # Get column names
+                col_names = [desc[0] for desc in cursor.description]
+                eval_df = pd.DataFrame(rows, columns=col_names)
+                
+                # Metrics
+                latest_run_id = eval_df['RUN_ID'].iloc[0]
+                latest_run_df = eval_df[eval_df['RUN_ID'] == latest_run_id]
+                
+                avg_acc = latest_run_df['SCORE_ACCURACY'].mean()
+                avg_qual = latest_run_df['SCORE_QUALITY'].mean()
+                
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Latest Run Accuracy", f"{avg_acc:.1%}")
+                col2.metric("Latest Run Quality", f"{avg_qual:.1f}/5.0")
+                col3.metric("Total Test Cases", len(latest_run_df))
+                
+                # Trend Chart
+                st.subheader("📈 Performance Trend")
+                trend_df = eval_df.groupby('EXECUTION_DATE').agg({
+                    'SCORE_ACCURACY': 'mean',
+                    'SCORE_QUALITY': 'mean'
+                }).reset_index()
+                
+                st.line_chart(trend_df.set_index('EXECUTION_DATE')[['SCORE_ACCURACY', 'SCORE_QUALITY']])
+                
+                # Detailed Table
+                st.subheader("📝 Latest Run Details")
+                st.dataframe(
+                    latest_run_df[['INPUT', 'EXPECTED_INTENT', 'ACTUAL_INTENT', 'SCORE_ACCURACY', 'SCORE_QUALITY', 'JUDGE_REASONING']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+        except Exception as e:
+            st.warning(f"Could not fetch evaluation logs: {e}")
+            st.info("Ensure the 'EVALUATION_LOGS' table exists in Snowflake.")
+        finally:
+            cursor.close()
 
 if __name__ == "__main__":
     main()
