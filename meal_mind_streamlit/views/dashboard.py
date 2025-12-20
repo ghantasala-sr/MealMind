@@ -117,11 +117,27 @@ def render_dashboard(conn, user_id):
         st.divider()
         st.subheader("📈 Nutrition Analytics")
         
+        
         # Fetch weekly averages
         weekly_df = get_weekly_averages(conn, user_id)
         daily_df = get_weekly_nutrition_history(conn, user_id)
         
-        if not weekly_df.empty:
+        # Count distinct meal plans to determine if we have enough data for comparison
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT COUNT(DISTINCT mp.plan_id) 
+                FROM meal_plans mp
+                WHERE mp.user_id = %s
+                AND mp.status IN ('ACTIVE', 'COMPLETED')
+            """, (user_id,))
+            plan_count = cursor.fetchone()[0]
+        except:
+            plan_count = 0
+        finally:
+            cursor.close()
+        
+        if not weekly_df.empty and plan_count >= 2:
             # Charts side by side
             chart_col1, chart_col2 = st.columns(2)
             
@@ -183,8 +199,8 @@ def render_dashboard(conn, user_id):
                     f"{current_week['fiber']:.1f}g",
                     delta=f"{fiber_delta:+.1f}g"
                 )
-            else:
-                st.info("Need at least 2 weeks of data for comparison")
+        elif not weekly_df.empty and plan_count == 1:
+            st.info("📊 You have one week of meal plan data. Complete at least one more week to see nutrition trends and comparisons!")
         
         # Daily Trend Line Chart
         if not daily_df.empty:

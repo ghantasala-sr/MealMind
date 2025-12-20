@@ -9,17 +9,20 @@ from utils.db import get_snowpark_session
 
 def render_meal_plan(conn, user_id):
     """Enhanced meal plan viewer"""
-    st.header("🍽️ My Weekly Meal Plan")
-
+    
     from utils.db import get_meal_plan_overview, get_daily_meals_for_plan, get_weekly_meal_details, get_future_meal_plan, get_meal_plan_history
     
     # Check for future plan
     future_plan = get_future_meal_plan(conn, user_id)
     view_plan_id = None
     
-    # History Selection
-    col_hist1, col_hist2 = st.columns([0.7, 0.3])
-    with col_hist2:
+    # Header with Select Week aligned on same row
+    col_header, col_selector = st.columns([0.6, 0.4])
+    
+    with col_header:
+        st.header("🍽️ My Weekly Meal Plan")
+    
+    with col_selector:
         history = get_meal_plan_history(conn, user_id)
         if history:
             # Format options for dropdown
@@ -39,17 +42,7 @@ def render_meal_plan(conn, user_id):
             if selected_plan_id:
                 view_plan_id = selected_plan_id
 
-    if future_plan:
-        if st.session_state.get('viewing_future_plan'):
-            st.success(f"📅 Viewing Future Plan (Starts {future_plan['start_date'].strftime('%B %d')})")
-            if st.button("⬅️ Back to Current Plan"):
-                st.session_state['viewing_future_plan'] = False
-                st.rerun()
-            view_plan_id = future_plan['plan_id']
-        else:
-            if st.button("👀 View Next Week's Plan"):
-                st.session_state['viewing_future_plan'] = True
-                st.rerun()
+    # Future plan viewing disabled
     
     active_plan = get_meal_plan_overview(conn, user_id, specific_plan_id=view_plan_id)
 
@@ -68,18 +61,16 @@ def render_meal_plan(conn, user_id):
     end_date = active_plan['end_date']
     week_summary = active_plan['week_summary'] if active_plan['week_summary'] else {}
 
-    # Header
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        st.subheader(f"📋 {plan_name}")
-        days_remaining = (end_date - datetime.now().date()).days
-        if days_remaining > 0:
-            st.caption(
-                f"📅 {start_date.strftime('%B %d')} - {end_date.strftime('%B %d')} • {days_remaining} days remaining")
-        else:
-            st.caption(f"📅 Plan ended on {end_date.strftime('%B %d')}")
-
-    with col2:
+    # Date range caption
+    days_remaining = (end_date - datetime.now().date()).days
+    if days_remaining > 0:
+        st.caption(f"📅 {start_date.strftime('%B %d')} - {end_date.strftime('%B %d')} • {days_remaining} days remaining")
+    else:
+        st.caption(f"📅 Plan ended on {end_date.strftime('%B %d')}")
+    
+    # Refresh button aligned to the right
+    col_spacer, col_refresh = st.columns([4, 1])
+    with col_refresh:
         if st.button("🔄 Refresh"):
             get_meal_plan_overview.clear()
             get_daily_meals_for_plan.clear()
